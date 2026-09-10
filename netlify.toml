@@ -1,0 +1,49 @@
+# Netlify config for the frontend.
+#
+# The app itself needs no changes to run here: every API call in src/api.ts is a
+# relative path ("/api/..."), so the rewrites below are the whole integration.
+#
+# ONE THING TO EDIT: replace BACKEND_URL_HERE (twice) with your backend's public
+# address once the VM is up, e.g. https://groceries.example.com
+
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Pin Node so Netlify doesn't pick a version vite dislikes.
+  NODE_VERSION = "22"
+
+# --- API proxy -------------------------------------------------------------
+#
+# status = 200 makes these REWRITES, not redirects: Netlify fetches the backend
+# server-side and returns the response as its own. The browser therefore sees a
+# single origin.
+#
+# That matters enormously for login. If the frontend called the backend directly
+# it would be a cross-site request, the SameSite=Lax session cookie would stop
+# being sent, and switching to SameSite=None would make it a third-party cookie
+# that Safari blocks by default -- breaking sign-in on exactly the phone this app
+# is for. Proxying avoids all of it, and means the backend needs no CORS config.
+
+[[redirects]]
+  from = "/api/*"
+  to = "BACKEND_URL_HERE/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/photos/*"
+  to = "BACKEND_URL_HERE/photos/:splat"
+  status = 200
+  force = true
+
+# --- SPA fallback ----------------------------------------------------------
+#
+# MUST stay last. Netlify applies the first matching rule, so a catch-all placed
+# above would swallow /api and /photos and serve them index.html instead.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
