@@ -1,0 +1,849 @@
+/* Phone-first. Big tap targets, one column, nothing clever.
+ *
+ * The layout is a flex column of exactly 100dvh: header, scrolling main, nav.
+ * That's deliberate -- the nav used to be `position: fixed` with a guessed
+ * padding-bottom on the content, which Safari's collapsing toolbar broke, and
+ * the submit button ended up underneath the tab bar. `dvh` tracks the toolbar,
+ * and a sticky nav inside the column can never overlap its own sibling.
+ */
+
+:root {
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-sunk: #f1efea;
+  --border: #e6e2da;
+  --border-strong: #d6d1c6;
+  --text: #1a1917;
+  --text-soft: #57544d;
+  --muted: #857f75;
+  --accent: #16714f;
+  --accent-hover: #125c41;
+  --accent-soft: #e7f1ec;
+  --up: #16714f;
+  --down: #b23c26;
+  --down-soft: #fbeae6;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 1px 2px rgba(26, 25, 23, 0.05);
+  --shadow-lift: 0 4px 16px rgba(26, 25, 23, 0.1);
+  --nav-h: 58px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141517;
+    --surface: #1d1f22;
+    --surface-sunk: #26282c;
+    --border: #2e3135;
+    --border-strong: #3d4045;
+    --text: #eeece8;
+    --text-soft: #b9b6b0;
+    --muted: #8e8b85;
+    --accent: #4cbd92;
+    --accent-hover: #63cba3;
+    --accent-soft: #17352a;
+    --up: #4cbd92;
+    --down: #e58a71;
+    --down-soft: #35211c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-lift: 0 4px 16px rgba(0, 0, 0, 0.45);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font:
+    16px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    system-ui,
+    sans-serif;
+  /* iOS zooms the page on focus if an input is under 16px, so nothing goes smaller. */
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  /* Stop the whole page rubber-banding sideways on iOS. */
+  overflow-x: hidden;
+}
+
+/* ---------------- layout shell ---------------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  /* dvh, not vh: dvh shrinks and grows with Safari's toolbar. */
+  min-height: 100dvh;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+header {
+  padding: 22px 18px 12px;
+}
+
+.app > main {
+  flex: 1 1 auto;
+  padding: 0 18px 28px;
+  min-width: 0;
+}
+
+nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  /* Clears the iPhone home indicator. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ---------------- type ---------------- */
+
+h1 {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.tagline,
+.hint {
+  color: var(--muted);
+  margin: 3px 0 0;
+  font-size: 14px;
+}
+
+.hint {
+  margin: 0;
+}
+
+.muted {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 14px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 22px 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+/* ---------------- header bits ---------------- */
+
+.header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.avatar {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  margin-top: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.account-menu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 11px 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lift);
+}
+
+.account-email {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* ---------------- form fields ---------------- */
+
+.field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+label {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-soft);
+}
+
+.field input {
+  width: 100%;
+  font-size: 16px;
+  padding: 13px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  /* iOS adds its own inner shadow and rounding otherwise. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.field input::placeholder {
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.field input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+
+/* Currency prefix sitting inside the price box. */
+.input-prefix {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-prefix > span {
+  position: absolute;
+  left: 14px;
+  color: var(--muted);
+  font-size: 16px;
+  pointer-events: none;
+}
+
+.input-prefix input {
+  padding-left: 30px;
+}
+
+.suggest-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin-top: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lift);
+  overflow: hidden auto;
+  max-height: 244px;
+}
+
+.suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font-size: 16px;
+}
+
+.suggest-item:last-child {
+  border-bottom: 0;
+}
+
+.suggest-item:hover,
+.suggest-item:focus-visible {
+  background: var(--accent-soft);
+}
+
+/* Marks a name she has bought before, versus a generic suggestion. */
+.suggest-item.known {
+  font-weight: 600;
+}
+
+.suggest-item.known .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: 0 0 6px;
+}
+
+.suggest-item .dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+}
+
+/* ---------------- photo ---------------- */
+
+.photo-drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 22px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.photo-drop input {
+  display: none;
+}
+
+.photo-preview {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.photo-preview img {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+/* ---------------- buttons ---------------- */
+
+button {
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 15px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.primary:active {
+  background: var(--accent-hover);
+}
+
+.primary:disabled {
+  opacity: 0.55;
+}
+
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.link {
+  margin-top: 16px;
+  padding: 10px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+/* Square icon-only button, e.g. delete on a row. */
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.icon-btn:active {
+  color: var(--down);
+  border-color: var(--down);
+  background: var(--down-soft);
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: var(--down);
+  font-size: 14px;
+}
+
+/* ---------------- cards & rows ---------------- */
+
+.card {
+  padding: 15px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.rate-card,
+.list-row,
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.thumb {
+  width: 50px;
+  height: 50px;
+  flex: 0 0 50px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--surface-sunk);
+}
+
+.thumb-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.thumb-sm {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+}
+
+.row-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.row-body strong {
+  font-size: 16px;
+  font-weight: 620;
+  /* Long names truncate rather than pushing the buttons off-screen. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-sub {
+  font-size: 13.5px;
+  color: var(--muted);
+  min-width: 0;
+  /* Up to two lines, then ellipsis -- truncating to one line lost the date
+     ("...tod…"). The views join with a non-breaking space before each middot, so
+     a separator can never start a line on its own. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.cheaper {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.rate-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.vote {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 19px;
+}
+
+.vote.up:active {
+  background: var(--accent-soft);
+  border-color: var(--up);
+  color: var(--up);
+}
+
+.vote.down:active {
+  background: var(--down-soft);
+  border-color: var(--down);
+  color: var(--down);
+}
+
+.row-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.row-meta span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.row-meta .up {
+  color: var(--up);
+}
+
+.row-meta .down {
+  color: var(--down);
+}
+
+.list-row.ticked {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.list-row.ticked .row-body strong {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+.muted-row {
+  opacity: 0.6;
+}
+
+.tick {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  color: #fff;
+}
+
+.tick.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------------- segmented control ---------------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-sunk);
+  border-radius: var(--radius);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 9px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 13.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.tab-count {
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--surface-sunk);
+  color: var(--muted);
+}
+
+.tab.active .tab-count {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ---------------- bottom nav ---------------- */
+
+.nav-item {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: var(--nav-h);
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.nav-item.active {
+  color: var(--accent);
+}
+
+.nav-icon {
+  display: grid;
+  place-items: center;
+  font-size: 21px;
+  line-height: 1;
+}
+
+.badge {
+  position: absolute;
+  top: 5px;
+  left: 56%;
+  min-width: 17px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: var(--down);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+/* ---------------- feedback ---------------- */
+
+.toast {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  /* Sits above the nav, including the home-indicator inset. */
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px);
+  z-index: 40;
+  max-width: 596px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 15px;
+  border-radius: var(--radius);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 14px;
+  font-weight: 550;
+  box-shadow: var(--shadow-lift);
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--accent-soft);
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+
+.notice-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.notice-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.empty {
+  text-align: center;
+  padding: 52px 16px;
+  color: var(--muted);
+}
+
+.empty-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 14px;
+  border-radius: 50%;
+  background: var(--surface-sunk);
+  color: var(--muted);
+  font-size: 26px;
+}
+
+.empty h2 {
+  margin: 0 0 6px;
+  color: var(--text);
+}
+
+.empty p {
+  margin: 0 auto;
+  max-width: 34ch;
+  font-size: 14px;
+}
+
+.empty .ghost {
+  margin-top: 16px;
+}
+
+/* ---------------- auth ---------------- */
+
+.auth {
+  padding: 46px 18px 32px;
+  text-align: center;
+}
+
+.auth h1 {
+  margin: 14px 0 0;
+}
+
+.auth .tagline {
+  margin: 4px 0 24px;
+}
+
+.auth-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 27px;
+}
+
+.auth form {
+  text-align: left;
+}
+
+/* Inline delete confirmation, replacing the row's buttons in place. */
+.confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.danger {
+  padding: 9px 13px;
+  border: 1px solid var(--down);
+  border-radius: var(--radius-sm);
+  background: var(--down);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+/* The rate card stacks: content, then a full-width row of actions. Three
+   controls beside a 50px thumbnail don't fit a 375pt screen, and the inline
+   delete confirmation needs somewhere to appear. */
+.rate-card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 11px;
+  padding: 12px;
+}
+
+.rate-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rate-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Votes take the room left over, so they're easy to hit one-handed. */
+.rate-actions .vote {
+  flex: 1 1 auto;
+  width: auto;
+}

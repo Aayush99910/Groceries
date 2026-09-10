@@ -1,0 +1,5 @@
+# sqlite3 is not listed here on purpose -- it ships inside Python itself.
+fastapi
+uvicorn[standard]
+python-multipart
+pillow

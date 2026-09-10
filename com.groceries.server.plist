@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Starts the grocery server automatically when you log in, and restarts it if it
+  ever crashes.
+
+  This file does nothing sitting here. To install it:
+
+    cp "com.groceries.server.plist" ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.groceries.server.plist
+
+  To stop and uninstall:
+
+    launchctl unload ~/Library/LaunchAgents/com.groceries.server.plist
+    rm ~/Library/LaunchAgents/com.groceries.server.plist
+
+  Notes:
+    * It runs uvicorn directly rather than serve.sh, so it doesn't need npm on
+      launchd's minimal PATH. Run `./serve.sh` by hand after changing the frontend
+      to rebuild frontend/dist.
+    * caffeinate keeps the Mac awake while the server runs. Because KeepAlive is
+      true, that is effectively always -- see "Keeping it awake" in README.md if
+      you'd rather it only stay awake on the power adapter.
+    * This is a LaunchAgent, so it starts at *login*, not at boot. After a restart
+      you need to log in once.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.groceries.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-si</string>
+        <string>/Users/aayush/Documents/Groceries recommender/backend/.venv/bin/uvicorn</string>
+        <string>app.main:app</string>
+        <string>--app-dir</string>
+        <string>/Users/aayush/Documents/Groceries recommender/backend</string>
+        <string>--host</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>8000</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/aayush/Documents/Groceries recommender</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/aayush/Library/Logs/groceries-server.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/aayush/Library/Logs/groceries-server.log</string>
+</dict>
+</plist>

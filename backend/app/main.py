@@ -1,0 +1,732 @@
+"""The API.
+
+Three things happen in this app:
+
+  1. In the store, log what was bought   -> POST /api/purchases
+  2. Later at home, rate what was eaten  -> POST /api/purchases/{id}/rate
+  3. Next trip, open the list            -> GET  /api/shopping-list
+
+Everything else exists to keep those three fast, to stop item names from drifting
+into duplicates, and to keep each account's history to itself.
+
+Every data route depends on `current_user` and filters by user_id. That is the
+only thing standing between two accounts, so it is not optional anywhere.
+"""
+
+import os
+import re
+import sqlite3
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from . import auth
+from .db import PHOTO_DIR, get_db, init_db, parse_iso, utcnow_iso
+from .photos import delete_photo, save_photo
+from .seed import CATEGORY_LABELS, CATEGORY_ORDER, COMMON_ITEMS, guess_category
+from .text import format_price, key_for, normalize, parse_price_cents, rank_matches
+
+MAX_PHOTO_BYTES = 12 * 1024 * 1024
+
+# Set GROCERY_HTTPS=1 once this is served over TLS (any real host gives you TLS).
+# It marks the session cookie Secure, so the browser refuses to send it over
+# plain http. Off by default because a Secure cookie is silently dropped on the
+# http:// LAN setup, which would look like "login does nothing".
+COOKIE_SECURE = os.environ.get("GROCERY_HTTPS", "").strip() in {"1", "true", "yes"}
+_PHOTO_NAME_RE = re.compile(r"^[0-9a-f]{32}\.jpg$")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()  # creates data/groceries.db and the tables on first run
+    yield
+
+
+app = FastAPI(title="Groceries", version="0.2.0", lifespan=lifespan)
+
+# Vite's dev server runs on a different port, so the browser needs permission --
+# and allow_credentials, or the session cookie won't be sent.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=r"http://(192\.168|10\.)[\d.]+:5173",  # phone on your wifi
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --------------------------------------------------------------------------
+# who is asking
+# --------------------------------------------------------------------------
+
+
+def current_user(
+    groceries_session: str | None = Cookie(None),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """The logged-in account, or a 401. Every data route depends on this."""
+    user = auth.user_for_session(db, groceries_session)
+    if user is None:
+        raise HTTPException(401, "Please sign in")
+    return user
+
+
+def _set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        auth.COOKIE_NAME,
+        token,
+        max_age=auth.SESSION_DAYS * 24 * 3600,
+        httponly=True,  # page scripts can't read it, so XSS can't steal it
+        samesite="lax",
+        path="/",
+        secure=COOKIE_SECURE,
+    )
+
+
+class Credentials(BaseModel):
+    email: str
+    password: str
+    display_name: str | None = None
+
+
+def _public_user(user) -> dict:
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "display_name": user["display_name"],
+    }
+
+
+@app.post("/api/auth/signup")
+def signup(
+    body: Credentials,
+    response: Response,
+    request: Request,
+    db: sqlite3.Connection = Depends(get_db),
+):
+    if not auth.email_looks_valid(body.email):
+        raise HTTPException(400, "That doesn't look like an email address")
+    problem = auth.password_problem(body.password)
+    if problem:
+        raise HTTPException(400, problem)
+    if auth.find_user_by_email(db, body.email):
+        raise HTTPException(409, "There's already an account with that email")
+
+    user = auth.create_user(db, body.email, body.password, body.display_name)
+    auth.clear_failures(request.client.host if request.client else "?")
+    _set_session_cookie(response, auth.create_session(db, user["id"]))
+    return {"user": _public_user(user)}
+
+
+@app.post("/api/auth/login")
+def login(
+    body: Credentials,
+    response: Response,
+    request: Request,
+    db: sqlite3.Connection = Depends(get_db),
+):
+    client = request.client.host if request.client else "?"
+    wait = auth.lockout_remaining(client)
+    if wait:
+        raise HTTPException(429, f"Too many attempts. Try again in {wait // 60 + 1} min")
+
+    user = auth.find_user_by_email(db, body.email)
+    # Same message either way: saying "no such account" tells an attacker which
+    # emails are registered.
+    if not user or not auth.verify_password(body.password, user["password_hash"]):
+        auth.record_failure(client)
+        raise HTTPException(401, "Wrong email or password")
+
+    auth.clear_failures(client)
+    _set_session_cookie(response, auth.create_session(db, user["id"]))
+    return {"user": _public_user(user)}
+
+
+@app.post("/api/auth/logout")
+def logout(
+    response: Response,
+    groceries_session: str | None = Cookie(None),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    auth.destroy_session(db, groceries_session)
+    response.delete_cookie(auth.COOKIE_NAME, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def me(
+    groceries_session: str | None = Cookie(None),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Never 401s -- the frontend calls this on load to decide which screen to show."""
+    user = auth.user_for_session(db, groceries_session)
+    return {"user": _public_user(user) if user else None}
+
+
+# --------------------------------------------------------------------------
+# helpers
+# --------------------------------------------------------------------------
+
+
+def _days_ago_phrase(iso: str) -> str:
+    days = (datetime.now(timezone.utc) - parse_iso(iso)).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 14:
+        return f"{days} days ago"
+    if days < 60:
+        return f"{days // 7} weeks ago"
+    return f"{days // 30} months ago"
+
+
+def _find_or_create_item(
+    db: sqlite3.Connection, user_id: int, name: str, photo: str | None
+) -> sqlite3.Row:
+    """One row per thing, per account. Where duplicate prevention lands."""
+    display = normalize(name)
+    if not display:
+        raise HTTPException(400, "Item name can't be empty")
+
+    key = key_for(display)
+    row = db.execute(
+        "SELECT * FROM items WHERE user_id = ? AND name_key = ?", (user_id, key)
+    ).fetchone()
+    if row:
+        # Freshen the display photo so the newest picture is the one shown.
+        if photo:
+            db.execute("UPDATE items SET photo = ? WHERE id = ?", (photo, row["id"]))
+            db.commit()
+            row = db.execute("SELECT * FROM items WHERE id = ?", (row["id"],)).fetchone()
+        return row
+
+    cursor = db.execute(
+        """INSERT INTO items (user_id, name, name_key, category, photo, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (user_id, display, key, guess_category(display), photo, utcnow_iso()),
+    )
+    db.commit()
+    return db.execute("SELECT * FROM items WHERE id = ?", (cursor.lastrowid,)).fetchone()
+
+
+def _find_or_create_haul(db: sqlite3.Connection, user_id: int, store: str) -> sqlite3.Row:
+    """A trip is 'one store, one day' -- inferred, so nobody taps 'start trip'."""
+    display = normalize(store) or "Unknown store"
+    key = key_for(display)
+    today = datetime.now().date().isoformat()
+
+    row = db.execute(
+        "SELECT * FROM hauls WHERE user_id = ? AND store_key = ? AND shopped_on = ?",
+        (user_id, key, today),
+    ).fetchone()
+    if row:
+        return row
+
+    cursor = db.execute(
+        """INSERT INTO hauls (user_id, store, store_key, shopped_on, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (user_id, display, key, today, utcnow_iso()),
+    )
+    db.commit()
+    return db.execute("SELECT * FROM hauls WHERE id = ?", (cursor.lastrowid,)).fetchone()
+
+
+def _purchase_payload(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "item_id": row["item_id"],
+        "item_name": row["item_name"],
+        "category": row["category"],
+        "store": row["store"],
+        "photo": row["photo"] or row["item_photo"],
+        "price": format_price(row["price_cents"]),
+        "price_cents": row["price_cents"],
+        "purchased_at": row["purchased_at"],
+        "when": _days_ago_phrase(row["purchased_at"]),
+        "liked": None if row["liked"] is None else bool(row["liked"]),
+    }
+
+
+_PURCHASE_SELECT = """
+    SELECT p.*, i.name AS item_name, i.category, i.photo AS item_photo, h.store
+    FROM purchases p
+    JOIN items i ON i.id = p.item_id
+    JOIN hauls h ON h.id = p.haul_id
+"""
+
+
+# --------------------------------------------------------------------------
+# 1. logging a purchase, in the store
+# --------------------------------------------------------------------------
+
+
+@app.post("/api/purchases")
+async def log_purchase(
+    name: str = Form(...),
+    store: str = Form(...),
+    price: str | None = Form(None),
+    photo: UploadFile | None = File(None),
+    user=Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Log one thing just bought. The date comes from here, not from her."""
+    photo_name: str | None = None
+    if photo is not None and photo.filename:
+        raw = await photo.read()
+        if len(raw) > MAX_PHOTO_BYTES:
+            raise HTTPException(413, "That photo is too big")
+        if raw:
+            try:
+                photo_name = save_photo(raw)
+            except Exception:
+                raise HTTPException(400, "Couldn't read that photo")
+
+    item = _find_or_create_item(db, user["id"], name, photo_name)
+    haul = _find_or_create_haul(db, user["id"], store)
+
+    cursor = db.execute(
+        """INSERT INTO purchases (user_id, item_id, haul_id, price_cents, photo, purchased_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (user["id"], item["id"], haul["id"], parse_price_cents(price), photo_name, utcnow_iso()),
+    )
+    db.commit()
+
+    count = db.execute(
+        "SELECT COUNT(*) AS n FROM purchases WHERE haul_id = ?", (haul["id"],)
+    ).fetchone()["n"]
+    row = db.execute(_PURCHASE_SELECT + " WHERE p.id = ?", (cursor.lastrowid,)).fetchone()
+
+    return {
+        "purchase": _purchase_payload(row),
+        "haul": {"id": haul["id"], "store": haul["store"], "item_count": count},
+    }
+
+
+@app.get("/api/suggest/items")
+def suggest_items(
+    q: str = Query("", max_length=80),
+    user=Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Autocomplete. Her own history first, then common groceries.
+
+    Picking from this list is the difference between one 'Milk' with real history
+    and three near-duplicates with none.
+    """
+    known = [
+        r["name"]
+        for r in db.execute(
+            "SELECT name FROM items WHERE user_id = ? ORDER BY name", (user["id"],)
+        ).fetchall()
+    ]
+    known_keys = {key_for(n) for n in known}
+    fallback = [n for n in COMMON_ITEMS if key_for(n) not in known_keys]
+
+    mine = rank_matches(q, known, limit=6)
+    theirs = rank_matches(q, fallback, limit=6)
+    combined = mine + [n for n in theirs if n not in mine]
+    return {"suggestions": combined[:8], "known": [n in known for n in combined[:8]]}
+
+
+@app.get("/api/suggest/stores")
+def suggest_stores(
+    q: str = Query("", max_length=80),
+    user=Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    stores = [
+        r["store"]
+        for r in db.execute(
+            """SELECT store, MAX(created_at) AS recent FROM hauls
+               WHERE user_id = ? GROUP BY store_key ORDER BY recent DESC""",
+            (user["id"],),
+        ).fetchall()
+    ]
+    return {"suggestions": rank_matches(q, stores, limit=6) if q else stores[:6]}
+
+
+# --------------------------------------------------------------------------
+# 2. rating the haul, at home
+# --------------------------------------------------------------------------
+
+
+@app.get("/api/hauls")
+def list_hauls(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    rows = db.execute(
+        """SELECT h.id, h.store, h.shopped_on,
+                  COUNT(p.id) AS item_count,
+                  SUM(CASE WHEN p.liked IS NULL THEN 1 ELSE 0 END) AS unrated,
+                  SUM(COALESCE(p.price_cents, 0)) AS total_cents
+           FROM hauls h
+           LEFT JOIN purchases p ON p.haul_id = h.id
+           WHERE h.user_id = ?
+           GROUP BY h.id
+           HAVING item_count > 0
+           ORDER BY h.shopped_on DESC, h.id DESC""",
+        (user["id"],),
+    ).fetchall()
+    return {
+        "hauls": [
+            {
+                "id": r["id"],
+                "store": r["store"],
+                "shopped_on": r["shopped_on"],
+                "item_count": r["item_count"],
+                "unrated": r["unrated"],
+                "total": format_price(r["total_cents"]) if r["total_cents"] else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/api/hauls/{haul_id}")
+def get_haul(
+    haul_id: int, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)
+):
+    haul = db.execute(
+        "SELECT * FROM hauls WHERE id = ? AND user_id = ?", (haul_id, user["id"])
+    ).fetchone()
+    if not haul:
+        raise HTTPException(404, "No such haul")
+    rows = db.execute(
+        _PURCHASE_SELECT + " WHERE p.haul_id = ? ORDER BY p.id DESC", (haul_id,)
+    ).fetchall()
+    return {
+        "haul": {"id": haul["id"], "store": haul["store"], "shopped_on": haul["shopped_on"]},
+        "purchases": [_purchase_payload(r) for r in rows],
+    }
+
+
+@app.get("/api/purchases/recent")
+def recent_purchases(
+    limit: int = Query(15, ge=1, le=100),
+    user=Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """The last few things logged, newest first.
+
+    Shown under the Log form so a mistyped entry can be deleted immediately,
+    while she still remembers making it.
+    """
+    rows = db.execute(
+        _PURCHASE_SELECT
+        + " WHERE p.user_id = ? ORDER BY p.purchased_at DESC, p.id DESC LIMIT ?",
+        (user["id"], limit),
+    ).fetchall()
+    return {"purchases": [_purchase_payload(r) for r in rows]}
+
+
+@app.get("/api/rate/pending")
+def pending_ratings(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    """"Rate your last haul" -- everything bought but not yet judged."""
+    rows = db.execute(
+        _PURCHASE_SELECT
+        + """ WHERE p.user_id = ? AND p.liked IS NULL
+              ORDER BY p.purchased_at DESC, p.id DESC""",
+        (user["id"],),
+    ).fetchall()
+    return {"purchases": [_purchase_payload(r) for r in rows]}
+
+
+class Rating(BaseModel):
+    liked: bool
+
+
+@app.post("/api/purchases/{purchase_id}/rate")
+def rate_purchase(
+    purchase_id: int,
+    rating: Rating,
+    user=Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    # The user_id in the WHERE clause is what stops one account rating another's
+    # purchases by guessing an id.
+    updated = db.execute(
+        "UPDATE purchases SET liked = ?, rated_at = ? WHERE id = ? AND user_id = ?",
+        (1 if rating.liked else 0, utcnow_iso(), purchase_id, user["id"]),
+    ).rowcount
+    db.commit()
+    if not updated:
+        raise HTTPException(404, "No such purchase")
+    row = db.execute(_PURCHASE_SELECT + " WHERE p.id = ?", (purchase_id,)).fetchone()
+    return {"purchase": _purchase_payload(row)}
+
+
+@app.post("/api/purchases/{purchase_id}/unrate")
+def unrate_purchase(
+    purchase_id: int, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)
+):
+    """Undo, because a mis-tap shouldn't be permanent."""
+    updated = db.execute(
+        "UPDATE purchases SET liked = NULL, rated_at = NULL WHERE id = ? AND user_id = ?",
+        (purchase_id, user["id"]),
+    ).rowcount
+    db.commit()
+    if not updated:
+        raise HTTPException(404, "No such purchase")
+    return {"ok": True}
+
+
+@app.delete("/api/purchases/{purchase_id}")
+def delete_purchase(
+    purchase_id: int, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)
+):
+    row = db.execute(
+        "SELECT photo FROM purchases WHERE id = ? AND user_id = ?", (purchase_id, user["id"])
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "No such purchase")
+    db.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
+    db.commit()
+    # Only drop the file if nothing still points at it for display.
+    still_used = db.execute(
+        "SELECT 1 FROM items WHERE photo = ? UNION SELECT 1 FROM purchases WHERE photo = ?",
+        (row["photo"], row["photo"]),
+    ).fetchone()
+    if not still_used:
+        delete_photo(row["photo"])
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# 3. the shopping list, next trip
+# --------------------------------------------------------------------------
+
+
+@app.get("/api/shopping-list")
+def shopping_list(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    """What she liked, what she didn't, and where each thing was cheapest.
+
+    Two buckets plus the not-yet-rated. Prices come from what was actually paid,
+    per store.
+    """
+    rows = db.execute(
+        """SELECT i.id, i.name, i.category, i.photo,
+                  COUNT(p.id) AS times_bought,
+                  SUM(CASE WHEN p.liked = 1 THEN 1 ELSE 0 END) AS likes,
+                  SUM(CASE WHEN p.liked = 0 THEN 1 ELSE 0 END) AS dislikes,
+                  MAX(p.purchased_at) AS last_purchased_at
+           FROM items i
+           JOIN purchases p ON p.item_id = i.id
+           WHERE i.user_id = ?
+           GROUP BY i.id
+           ORDER BY likes DESC, last_purchased_at DESC""",
+        (user["id"],),
+    ).fetchall()
+
+    # Cheapest price seen per item per store.
+    price_rows = db.execute(
+        """SELECT p.item_id, h.store,
+                  MIN(p.price_cents) AS cheapest
+           FROM purchases p
+           JOIN hauls h ON h.id = p.haul_id
+           WHERE p.user_id = ? AND p.price_cents IS NOT NULL
+           GROUP BY p.item_id, h.store_key
+           ORDER BY cheapest ASC""",
+        (user["id"],),
+    ).fetchall()
+
+    prices: dict[int, list[dict]] = {}
+    for r in price_rows:
+        prices.setdefault(r["item_id"], []).append(
+            {"store": r["store"], "price": format_price(r["cheapest"]), "cents": r["cheapest"]}
+        )
+
+    last_rows = db.execute(
+        """SELECT p.item_id, h.store, p.price_cents
+           FROM purchases p
+           JOIN hauls h ON h.id = p.haul_id
+           WHERE p.id IN (
+               SELECT MAX(id) FROM purchases WHERE user_id = ? GROUP BY item_id
+           )""",
+        (user["id"],),
+    ).fetchall()
+    last_seen = {r["item_id"]: r for r in last_rows}
+
+    liked: list[dict] = []
+    disliked: list[dict] = []
+    unrated: list[dict] = []
+
+    for r in rows:
+        last = last_seen.get(r["id"])
+        entry = {
+            "item_id": r["id"],
+            "name": r["name"],
+            "category": r["category"],
+            "category_label": CATEGORY_LABELS.get(r["category"], CATEGORY_LABELS["other"]),
+            "photo": r["photo"],
+            "times_bought": r["times_bought"],
+            "likes": r["likes"],
+            "dislikes": r["dislikes"],
+            "last_store": last["store"] if last else None,
+            "last_price": format_price(last["price_cents"]) if last else None,
+            "when": _days_ago_phrase(r["last_purchased_at"]),
+            "stores": prices.get(r["id"], []),
+        }
+        entry["best"] = entry["stores"][0] if entry["stores"] else None
+
+        if r["likes"] > r["dislikes"]:
+            liked.append(entry)
+        elif r["dislikes"] > 0:
+            disliked.append(entry)
+        else:
+            unrated.append(entry)
+
+    def grouped(entries: list[dict]) -> list[dict]:
+        buckets: dict[str, list[dict]] = {}
+        for e in entries:
+            buckets.setdefault(e["category"], []).append(e)
+        return [
+            {"category": c, "label": CATEGORY_LABELS[c], "items": buckets[c]}
+            for c in CATEGORY_ORDER
+            if c in buckets
+        ]
+
+    return {
+        "liked": liked,
+        "liked_grouped": grouped(liked),
+        "disliked": disliked,
+        "unrated": unrated,
+    }
+
+
+# --------------------------------------------------------------------------
+# tidying up the inevitable duplicates
+# --------------------------------------------------------------------------
+
+
+@app.get("/api/items")
+def list_items(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    rows = db.execute(
+        """SELECT i.*, COUNT(p.id) AS times_bought
+           FROM items i LEFT JOIN purchases p ON p.item_id = i.id
+           WHERE i.user_id = ?
+           GROUP BY i.id ORDER BY i.name""",
+        (user["id"],),
+    ).fetchall()
+    return {
+        "items": [
+            {
+                "id": r["id"],
+                "name": r["name"],
+                "category": r["category"],
+                "photo": r["photo"],
+                "times_bought": r["times_bought"],
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.post("/api/items/{source_id}/merge-into/{target_id}")
+def merge_items(
+    source_id: int,
+    target_id: int,
+    user=Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Fold "Milk 2%" into "Milk", history and all.
+
+    Autocomplete prevents most duplicates; this cleans up the rest.
+    """
+    if source_id == target_id:
+        raise HTTPException(400, "An item can't be merged into itself")
+
+    source = db.execute(
+        "SELECT * FROM items WHERE id = ? AND user_id = ?", (source_id, user["id"])
+    ).fetchone()
+    target = db.execute(
+        "SELECT * FROM items WHERE id = ? AND user_id = ?", (target_id, user["id"])
+    ).fetchone()
+    if not source or not target:
+        raise HTTPException(404, "No such item")
+
+    db.execute("UPDATE purchases SET item_id = ? WHERE item_id = ?", (target_id, source_id))
+    if not target["photo"] and source["photo"]:
+        db.execute("UPDATE items SET photo = ? WHERE id = ?", (source["photo"], target_id))
+    db.execute("DELETE FROM items WHERE id = ?", (source_id,))
+    db.commit()
+    return {"ok": True, "merged_into": target["name"]}
+
+
+@app.patch("/api/items/{item_id}")
+def rename_item(
+    item_id: int,
+    name: str | None = Form(None),
+    category: str | None = Form(None),
+    user=Depends(current_user),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    item = db.execute(
+        "SELECT * FROM items WHERE id = ? AND user_id = ?", (item_id, user["id"])
+    ).fetchone()
+    if not item:
+        raise HTTPException(404, "No such item")
+
+    if name:
+        display = normalize(name)
+        key = key_for(display)
+        clash = db.execute(
+            "SELECT id FROM items WHERE user_id = ? AND name_key = ? AND id != ?",
+            (user["id"], key, item_id),
+        ).fetchone()
+        if clash:
+            raise HTTPException(409, f"'{display}' already exists — merge them instead")
+        db.execute("UPDATE items SET name = ?, name_key = ? WHERE id = ?", (display, key, item_id))
+    if category:
+        db.execute("UPDATE items SET category = ? WHERE id = ?", (category, item_id))
+    db.commit()
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# photos and the built frontend
+# --------------------------------------------------------------------------
+
+
+@app.get("/photos/{filename}")
+def get_photo(
+    filename: str, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)
+):
+    """Served through a route rather than StaticFiles so it can be authorised.
+
+    Two checks: the name must be one we generated (which is also what stops
+    "../../groceries.db" style paths), and the photo must belong to this account.
+    Random filenames alone would be obscurity, not access control.
+    """
+    if not _PHOTO_NAME_RE.match(filename):
+        raise HTTPException(404, "No such photo")
+
+    owns = db.execute(
+        """SELECT 1 FROM items    WHERE user_id = ? AND photo = ?
+           UNION
+           SELECT 1 FROM purchases WHERE user_id = ? AND photo = ?""",
+        (user["id"], filename, user["id"], filename),
+    ).fetchone()
+    if not owns:
+        raise HTTPException(404, "No such photo")
+
+    path = PHOTO_DIR / filename
+    if not path.is_file():
+        raise HTTPException(404, "No such photo")
+    return FileResponse(path, media_type="image/jpeg")
+
+
+# Serve the built React app if it exists, so `npm run build` gives you one
+# server to put on your wifi for her phone.
+_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/")
+    def _index():
+        return FileResponse(_DIST / "index.html")

@@ -1,0 +1,14 @@
+# Her actual grocery data and photos never belong in the repo.
+backend/data/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# node
+node_modules/
+frontend/dist/
+
+# macOS
+.DS_Store
