@@ -847,3 +847,214 @@ button {
   flex: 1 1 auto;
   width: auto;
 }
+
+/* ---------------- item detail sheet ---------------- */
+
+/* Rows are dense so a whole shop fits on screen; this is where you see one
+   properly. Slides up from the bottom -- thumb-reachable on a phone. */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(16, 15, 14, 0.55);
+  /* Safari needs the prefix for backdrop blur. */
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: sheet-fade 0.15s ease-out;
+}
+
+.sheet {
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  max-height: 92dvh;
+  overflow-y: auto;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  box-shadow: var(--shadow-lift);
+  padding-bottom: calc(18px + env(safe-area-inset-bottom));
+  animation: sheet-rise 0.2s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+@media (min-width: 640px) {
+  /* Centre it as a dialog once there's room, rather than a bottom sheet. */
+  .sheet-overlay {
+    align-items: center;
+  }
+  .sheet {
+    border-radius: 20px;
+    max-height: 88dvh;
+  }
+}
+
+@keyframes sheet-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sheet-rise {
+  from { transform: translateY(14px); }
+  to { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-overlay,
+  .sheet {
+    animation: none;
+  }
+}
+
+.sheet-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  /* Sits on top of the photo, so it needs its own contrast. */
+  background: rgba(16, 15, 14, 0.55);
+  color: #fff;
+  font-size: 18px;
+}
+
+.sheet-photo {
+  display: block;
+  width: 100%;
+  /* contain, not cover: show the whole thing rather than cropping it. */
+  max-height: 46dvh;
+  object-fit: contain;
+  background: var(--surface-sunk);
+  border-radius: 20px 20px 0 0;
+}
+
+.sheet-photo-empty {
+  display: grid;
+  place-items: center;
+  height: 180px;
+  color: var(--muted);
+}
+
+.sheet-body {
+  padding: 18px;
+}
+
+.sheet-body h2 {
+  font-size: 21px;
+  line-height: 1.25;
+}
+
+.sheet-category {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.sheet-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.sheet-price {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.sheet-store {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  color: var(--text-soft);
+}
+
+.sheet-when {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.sheet-section {
+  margin-top: 18px;
+}
+
+.sheet-stores {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.sheet-stores li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+}
+
+.sheet-stores li:last-child {
+  border-bottom: 0;
+}
+
+.sheet-stores li.best {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sheet-stores li.best strong {
+  color: var(--accent);
+}
+
+.sheet-tally {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.sheet-tally span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sheet-tally .up { color: var(--up); }
+.sheet-tally .down { color: var(--down); }
+
+/* The tick is now a real button (the row opens the sheet), so reset button chrome. */
+.tick {
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* Wraps the thumbnail on rate cards so the photo alone opens the sheet. */
+.thumb-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  line-height: 0;
+  border-radius: var(--radius-sm);
+}

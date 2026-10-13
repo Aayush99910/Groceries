@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import DeleteButton from "../components/DeleteButton";
 import Icon from "../components/Icon";
+import ItemSheet from "../components/ItemSheet";
 import {
   NotSignedIn,
   Purchase,
@@ -29,6 +30,7 @@ export default function RateView({
   const [purchases, setPurchases] = useState<Purchase[] | null>(null);
   const [lastRated, setLastRated] = useState<{ purchase: Purchase; liked: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<Purchase | null>(null);
 
   useEffect(() => {
     pendingRatings()
@@ -140,13 +142,20 @@ export default function RateView({
             {group.map((p) => (
               <article className="rate-card" key={p.id}>
                 <div className="rate-top">
-                  {photoUrl(p.photo) ? (
-                    <img className="thumb" src={photoUrl(p.photo)!} alt="" />
-                  ) : (
-                    <div className="thumb thumb-empty">
-                      <Icon name="cart" />
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    className="thumb-button"
+                    onClick={() => setDetail(p)}
+                    aria-label={`See ${p.item_name} larger`}
+                  >
+                    {photoUrl(p.photo) ? (
+                      <img className="thumb" src={photoUrl(p.photo)!} alt="" />
+                    ) : (
+                      <div className="thumb thumb-empty">
+                        <Icon name="cart" />
+                      </div>
+                    )}
+                  </button>
                   <div className="row-body">
                     <strong>{p.item_name}</strong>
                     <span className="row-sub">
@@ -176,6 +185,17 @@ export default function RateView({
           </div>
         </section>
       ))}
+
+      {detail && (
+        <ItemSheet
+          name={detail.item_name}
+          photo={detail.photo}
+          price={detail.price}
+          store={detail.store}
+          when={detail.when}
+          onClose={() => setDetail(null)}
+        />
+      )}
     </div>
   );
 }

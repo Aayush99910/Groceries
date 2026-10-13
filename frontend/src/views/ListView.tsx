@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import Icon from "../components/Icon";
+import ItemSheet from "../components/ItemSheet";
 import { ListEntry, NotSignedIn, ShoppingList, photoUrl, shoppingList } from "../api";
 
 type Bucket = "liked" | "unrated" | "disliked";
@@ -29,6 +30,8 @@ export default function ListView({
   const [data, setData] = useState<ShoppingList | null>(null);
   const [tab, setTab] = useState<Bucket>("liked");
   const [ticked, setTicked] = useState<Set<number>>(new Set());
+  // The entry whose full-size detail sheet is open, if any.
+  const [detail, setDetail] = useState<ListEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -125,14 +128,36 @@ export default function ListView({
                     entry={entry}
                     ticked={ticked.has(entry.item_id)}
                     onToggle={() => toggle(entry.item_id)}
+                    onOpen={() => setDetail(entry)}
                   />
                 ))}
               </div>
             </section>
           ))
         : entries.map((entry) => (
-            <Row key={entry.item_id} entry={entry} muted={tab === "disliked"} />
+            <Row
+              key={entry.item_id}
+              entry={entry}
+              muted={tab === "disliked"}
+              onOpen={() => setDetail(entry)}
+            />
           ))}
+
+      {detail && (
+        <ItemSheet
+          name={detail.name}
+          photo={detail.photo}
+          category={detail.category_label}
+          price={detail.last_price}
+          store={detail.last_store}
+          when={detail.when}
+          stores={detail.stores}
+          likes={detail.likes}
+          dislikes={detail.dislikes}
+          timesBought={detail.times_bought}
+          onClose={() => setDetail(null)}
+        />
+      )}
     </div>
   );
 }
@@ -141,11 +166,13 @@ function Row({
   entry,
   ticked,
   onToggle,
+  onOpen,
   muted,
 }: {
   entry: ListEntry;
   ticked?: boolean;
   onToggle?: () => void;
+  onOpen?: () => void;
   muted?: boolean;
 }) {
   // Cheapest store is only worth calling out if she has actually seen it
@@ -163,11 +190,23 @@ function Row({
   return (
     <article
       className={`list-row${ticked ? " ticked" : ""}${muted ? " muted-row" : ""}`}
-      onClick={onToggle}
-      role={onToggle ? "button" : undefined}
+      onClick={onOpen}
+      role={onOpen ? "button" : undefined}
     >
       {onToggle && (
-        <div className={`tick${ticked ? " on" : ""}`}>{ticked && <Icon name="check" size="0.9em" />}</div>
+        <button
+          type="button"
+          className={`tick${ticked ? " on" : ""}`}
+          aria-label={ticked ? `Take ${entry.name} out of the trolley` : `Put ${entry.name} in the trolley`}
+          aria-pressed={ticked}
+          // The row opens the detail sheet, so ticking must not bubble up to it.
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+        >
+          {ticked && <Icon name="check" size="0.9em" />}
+        </button>
       )}
       {photoUrl(entry.photo) ? (
         <img className="thumb" src={photoUrl(entry.photo)!} alt="" />
