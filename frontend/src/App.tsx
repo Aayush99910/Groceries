@@ -87,10 +87,28 @@ export default function App() {
         {menuOpen && (
           <div className="account-menu">
             <span className="account-email">{user.display_name || user.email}</span>
-            <button className="ghost" onClick={signOut}>
-              <Icon name="signOut" />
-              Sign out
-            </button>
+            <div className="account-actions">
+              {/* Plain links, not fetch(): the browser sends the session cookie
+                  with the navigation and handles the save dialog itself, so
+                  there's no blob to build or revoke. Same-origin, so `download`
+                  is honoured. */}
+              <a className="ghost" href="/api/export.pdf" download>
+                <Icon name="download" />
+                PDF
+              </a>
+              <a className="ghost" href="/api/export.csv" download>
+                <Icon name="download" />
+                Spreadsheet
+              </a>
+              <a className="ghost" href="/api/export.zip" download>
+                <Icon name="download" />
+                Everything
+              </a>
+              <button className="ghost" onClick={signOut}>
+                <Icon name="signOut" />
+                Sign out
+              </button>
+            </div>
           </div>
         )}
       </header>

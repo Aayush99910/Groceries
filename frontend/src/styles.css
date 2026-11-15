@@ -1058,3 +1058,23 @@ button {
   line-height: 0;
   border-radius: var(--radius-sm);
 }
+
+/* Account menu grew past one button, so it stacks. */
+.account-menu {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* The export links are <a>, so give them the button's look. */
+.account-actions .ghost {
+  flex: 1 1 auto;
+  justify-content: center;
+  text-decoration: none;
+}

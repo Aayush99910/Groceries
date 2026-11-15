@@ -21,7 +21,8 @@ export type IconName =
   | "tag"
   | "signOut"
   | "chevronDown"
-  | "sparkle";
+  | "sparkle"
+  | "download";
 
 type Props = {
   name: IconName;
@@ -133,6 +134,14 @@ const PATHS: Record<IconName, React.ReactNode> = {
   ),
 
   chevronDown: <path d="M6 9.5l6 6 6-6" />,
+
+  download: (
+    <>
+      <path d="M12 3.5v11" />
+      <path d="M7.5 10.5 12 15l4.5-4.5" />
+      <path d="M4 17.5v1.6a1.9 1.9 0 0 0 1.9 1.9h12.2a1.9 1.9 0 0 0 1.9-1.9v-1.6" />
+    </>
+  ),
 
   sparkle: (
     <>

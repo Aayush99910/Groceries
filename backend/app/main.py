@@ -13,21 +13,26 @@ Every data route depends on `current_user` and filters by user_id. That is the
 only thing standing between two accounts, so it is not optional anywhere.
 """
 
+import csv
+import io
+import json
 import os
 import re
 import sqlite3
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import auth
 from .db import PHOTO_DIR, get_db, init_db, parse_iso, utcnow_iso
+from .pdf_export import build_pdf
 from .photos import delete_photo, save_photo
 from .seed import CATEGORY_LABELS, CATEGORY_ORDER, COMMON_ITEMS, guess_category
 from .text import format_price, key_for, normalize, parse_price_cents, rank_matches
@@ -719,6 +724,146 @@ def get_photo(
     if not path.is_file():
         raise HTTPException(404, "No such photo")
     return FileResponse(path, media_type="image/jpeg")
+
+
+# --------------------------------------------------------------------------
+# taking your data with you
+# --------------------------------------------------------------------------
+
+_EXPORT_SQL = """
+    SELECT p.id, p.purchased_at, h.shopped_on, h.store, i.name AS item_name,
+           i.category, p.price_cents, p.liked, p.rated_at, p.photo AS purchase_photo,
+           i.photo AS item_photo
+    FROM purchases p
+    JOIN items i ON i.id = p.item_id
+    JOIN hauls h ON h.id = p.haul_id
+    WHERE p.user_id = ?
+    ORDER BY p.purchased_at DESC, p.id DESC
+"""
+
+
+def _export_rows(db: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
+    return db.execute(_EXPORT_SQL, (user_id,)).fetchall()
+
+
+def _export_filename(user, extension: str) -> str:
+    stamp = datetime.now().date().isoformat()
+    return f"groceries-{stamp}.{extension}"
+
+
+def _csv_text(rows) -> str:
+    """One row per purchase, in the order a spreadsheet wants them."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        ["date", "store", "item", "category", "price", "price_cents", "rating", "photo"]
+    )
+    for r in rows:
+        writer.writerow(
+            [
+                r["shopped_on"],
+                r["store"],
+                r["item_name"],
+                r["category"],
+                # Both: the formatted one reads well, the integer survives
+                # spreadsheet autoformatting and stays exact.
+                format_price(r["price_cents"]) or "",
+                r["price_cents"] if r["price_cents"] is not None else "",
+                {None: "not rated", 0: "disliked", 1: "liked"}[r["liked"]],
+                r["purchase_photo"] or r["item_photo"] or "",
+            ]
+        )
+    return buffer.getvalue()
+
+
+@app.get("/api/export.csv")
+def export_csv(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    """Every purchase as a spreadsheet."""
+    text = _csv_text(_export_rows(db, user["id"]))
+    return Response(
+        content=text,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            # `attachment` is what makes the browser save it instead of showing it.
+            "Content-Disposition": f'attachment; filename="{_export_filename(user, "csv")}"'
+        },
+    )
+
+
+@app.get("/api/export.pdf")
+def export_pdf(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    """The readable one -- opens straight in Safari on a phone."""
+    pdf = build_pdf(_export_rows(db, user["id"]), user["email"], PHOTO_DIR)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_export_filename(user, "pdf")}"'
+        },
+    )
+
+
+@app.get("/api/export.zip")
+def export_zip(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    """Everything: the spreadsheet, the raw JSON, and every photo.
+
+    This is the backup. The database lives on one disk, and one copy of anything
+    is not a backup -- downloading this is how the data survives the machine.
+    """
+    rows = _export_rows(db, user["id"])
+
+    records = [
+        {
+            "purchased_at": r["purchased_at"],
+            "shopped_on": r["shopped_on"],
+            "store": r["store"],
+            "item": r["item_name"],
+            "category": r["category"],
+            "price_cents": r["price_cents"],
+            "price": format_price(r["price_cents"]),
+            "liked": None if r["liked"] is None else bool(r["liked"]),
+            "rated_at": r["rated_at"],
+            "photo": r["purchase_photo"] or r["item_photo"],
+        }
+        for r in rows
+    ]
+
+    buffer = io.BytesIO()
+    # Photos are already JPEG, so deflate buys almost nothing on them -- but the
+    # CSV and JSON compress well and the whole archive is a couple of megabytes.
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("groceries.csv", _csv_text(rows))
+        archive.writestr(
+            "groceries.json",
+            json.dumps(
+                {
+                    "exported_at": utcnow_iso(),
+                    "account": user["email"],
+                    "purchases": records,
+                },
+                indent=2,
+            ),
+        )
+
+        # Dedupe: several purchases of one item can share a display photo.
+        seen: set[str] = set()
+        for r in rows:
+            for name in (r["purchase_photo"], r["item_photo"]):
+                if not name or name in seen:
+                    continue
+                seen.add(name)
+                path = PHOTO_DIR / name
+                if path.is_file():
+                    archive.write(path, f"photos/{name}")
+
+    buffer.seek(0)
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_export_filename(user, "zip")}"'
+        },
+    )
 
 
 # Serve the built React app if it exists, so `npm run build` gives you one
