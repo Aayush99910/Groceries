@@ -3,8 +3,8 @@
 # The app itself needs no changes to run here: every API call in src/api.ts is a
 # relative path ("/api/..."), so the rewrites below are the whole integration.
 #
-# ONE THING TO EDIT: replace BACKEND_URL_HERE (twice) with your backend's public
-# address once the VM is up, e.g. https://groceries.example.com
+# The backend lives on Render. If its URL ever changes, update it in the two
+# redirect rules below.
 
 [build]
   base = "frontend"
@@ -29,13 +29,13 @@
 
 [[redirects]]
   from = "/api/*"
-  to = "BACKEND_URL_HERE/api/:splat"
+  to = "https://groceries-omeh.onrender.com/api/:splat"
   status = 200
   force = true
 
 [[redirects]]
   from = "/photos/*"
-  to = "BACKEND_URL_HERE/photos/:splat"
+  to = "https://groceries-omeh.onrender.com/photos/:splat"
   status = 200
   force = true
 
