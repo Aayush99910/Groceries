@@ -181,7 +181,12 @@ def user_for_session(db: psycopg.Connection, token: str | None):
         return None
 
     row = db.execute(
-        """SELECT s.token, s.created_at, u.*
+        # The session's timestamp must be aliased: both tables have a created_at,
+        # and with dict rows the later column silently overwrites the earlier one.
+        # Unaliased, this compared the *account's* age against the session limit,
+        # so every login would have counted as expired once the account was 180
+        # days old.
+        """SELECT s.token, s.created_at AS session_created_at, u.*
            FROM sessions s JOIN users u ON u.id = s.user_id
            WHERE s.token = %s""",
         (token,),
@@ -189,7 +194,9 @@ def user_for_session(db: psycopg.Connection, token: str | None):
     if not row:
         return None
 
-    if parse_iso(row["created_at"]) < datetime.now(timezone.utc) - timedelta(days=SESSION_DAYS):
+    if parse_iso(row["session_created_at"]) < datetime.now(timezone.utc) - timedelta(
+        days=SESSION_DAYS
+    ):
         db.execute("DELETE FROM sessions WHERE token = %s", (token,))
         db.commit()
         return None

@@ -125,6 +125,7 @@ def _public_user(user) -> dict:
         "id": user["id"],
         "email": user["email"],
         "display_name": user["display_name"],
+        "created_at": user["created_at"],
     }
 
 
@@ -171,6 +172,68 @@ def login(
     auth.clear_failures(client)
     _set_session_cookie(response, auth.create_session(db, user["id"]))
     return {"user": _public_user(user)}
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str | None = None
+
+
+@app.patch("/api/auth/me")
+def update_me(
+    body: ProfileUpdate,
+    user=Depends(current_user),
+    db: psycopg.Connection = Depends(get_db),
+):
+    name = (body.display_name or "").strip()
+    if len(name) > 60:
+        raise HTTPException(400, "That name is too long")
+    row = db.execute(
+        "UPDATE users SET display_name = %s WHERE id = %s RETURNING *",
+        (name or None, user["id"]),
+    ).fetchone()
+    db.commit()
+    return {"user": _public_user(row)}
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@app.post("/api/auth/password")
+def change_password(
+    body: PasswordChange,
+    request: Request,
+    groceries_session: str | None = Cookie(None),
+    user=Depends(current_user),
+    db: psycopg.Connection = Depends(get_db),
+):
+    # 400, never 401: the frontend treats 401 as "your session is gone" and would
+    # bounce her to the login screen for simply mistyping her current password.
+    client = request.client.host if request.client else "?"
+    wait = auth.lockout_remaining(client)
+    if wait:
+        raise HTTPException(429, f"Too many attempts. Try again in {wait // 60 + 1} min")
+    if not auth.verify_password(body.current_password, user["password_hash"]):
+        auth.record_failure(client)
+        raise HTTPException(400, "Your current password isn't right")
+    problem = auth.password_problem(body.new_password)
+    if problem:
+        raise HTTPException(400, problem)
+
+    db.execute(
+        "UPDATE users SET password_hash = %s WHERE id = %s",
+        (auth.hash_password(body.new_password), user["id"]),
+    )
+    # Every other signed-in device is signed out: if the old password had leaked,
+    # changing it should actually lock that person out. This device stays in.
+    db.execute(
+        "DELETE FROM sessions WHERE user_id = %s AND token <> %s",
+        (user["id"], groceries_session),
+    )
+    db.commit()
+    auth.clear_failures(client)
+    return {"ok": True}
 
 
 @app.post("/api/auth/logout")
