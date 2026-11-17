@@ -57,14 +57,33 @@ app = FastAPI(title="Groceries", version="0.2.0", lifespan=lifespan)
 
 # Vite's dev server runs on a different port, so the browser needs permission --
 # and allow_credentials, or the session cookie won't be sent.
+# Extra origins for the deployed frontend, comma-separated, e.g.
+#   GROCERY_ALLOWED_ORIGINS=https://groceries.netlify.app
+# Usually unnecessary: Netlify proxies /api and /photos server-side (see
+# netlify.toml), so the browser sees one origin and never sends a CORS preflight.
+_EXTRA_ORIGINS = [
+    o.strip() for o in os.environ.get("GROCERY_ALLOWED_ORIGINS", "").split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", *_EXTRA_ORIGINS],
     allow_origin_regex=r"http://(192\.168|10\.)[\d.]+:5173",  # phone on your wifi
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/healthz")
+def healthz(db: psycopg.Connection = Depends(get_db)):
+    """Liveness for the host's health check.
+
+    Touches the database on purpose: a process that is running but can't reach
+    Postgres is not actually healthy, and saying so lets the host restart it.
+    """
+    db.execute("SELECT 1")
+    return {"ok": True}
 
 
 # --------------------------------------------------------------------------
