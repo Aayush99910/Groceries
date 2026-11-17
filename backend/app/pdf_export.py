@@ -9,7 +9,8 @@ the photos are the whole point of the app, so a text-only export would just be
 the CSV with worse formatting.
 """
 
-from pathlib import Path
+import io
+from collections.abc import Callable
 
 from fpdf import FPDF
 from fpdf.enums import Align, XPos, YPos
@@ -37,7 +38,12 @@ def _safe(text: str | None) -> str:
     return text.encode("latin-1", "replace").decode("latin-1")
 
 
-def build_pdf(rows, account: str, photo_dir: Path) -> bytes:
+def build_pdf(rows, account: str, load_photo: Callable[[str], bytes | None]) -> bytes:
+    """`load_photo` takes a photo id and returns its JPEG bytes, or None.
+
+    Passed in rather than imported so this module stays ignorant of where photos
+    actually live -- it was a directory, it is now a database column.
+    """
     pdf = FPDF(unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -94,10 +100,10 @@ def build_pdf(rows, account: str, photo_dir: Path) -> bytes:
         photo = r["purchase_photo"] or r["item_photo"]
         text_x = pdf.l_margin
         if photo:
-            path = photo_dir / photo
-            if path.is_file():
+            data = load_photo(photo)
+            if data:
                 try:
-                    pdf.image(str(path), x=pdf.l_margin, y=top + 1, w=THUMB, h=THUMB)
+                    pdf.image(io.BytesIO(data), x=pdf.l_margin, y=top + 1, w=THUMB, h=THUMB)
                     text_x = pdf.l_margin + THUMB + 4
                 except Exception:
                     # A corrupt image must not take the whole export down.

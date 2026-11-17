@@ -18,7 +18,7 @@ import io
 import json
 import os
 import re
-import sqlite3
+import psycopg
 import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -31,9 +31,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import auth
-from .db import PHOTO_DIR, get_db, init_db, parse_iso, utcnow_iso
+from .db import get_db, init_db, parse_iso, utcnow_iso
 from .pdf_export import build_pdf
-from .photos import delete_photo, save_photo
+from .photos import delete_photo, load_photo, save_photo
 from .seed import CATEGORY_LABELS, CATEGORY_ORDER, COMMON_ITEMS, guess_category
 from .text import format_price, key_for, normalize, parse_price_cents, rank_matches
 
@@ -74,7 +74,7 @@ app.add_middleware(
 
 def current_user(
     groceries_session: str | None = Cookie(None),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     """The logged-in account, or a 401. Every data route depends on this."""
     user = auth.user_for_session(db, groceries_session)
@@ -114,7 +114,7 @@ def signup(
     body: Credentials,
     response: Response,
     request: Request,
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     if not auth.email_looks_valid(body.email):
         raise HTTPException(400, "That doesn't look like an email address")
@@ -135,7 +135,7 @@ def login(
     body: Credentials,
     response: Response,
     request: Request,
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     client = request.client.host if request.client else "?"
     wait = auth.lockout_remaining(client)
@@ -158,7 +158,7 @@ def login(
 def logout(
     response: Response,
     groceries_session: str | None = Cookie(None),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     auth.destroy_session(db, groceries_session)
     response.delete_cookie(auth.COOKIE_NAME, path="/")
@@ -168,7 +168,7 @@ def logout(
 @app.get("/api/auth/me")
 def me(
     groceries_session: str | None = Cookie(None),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     """Never 401s -- the frontend calls this on load to decide which screen to show."""
     user = auth.user_for_session(db, groceries_session)
@@ -194,8 +194,8 @@ def _days_ago_phrase(iso: str) -> str:
 
 
 def _find_or_create_item(
-    db: sqlite3.Connection, user_id: int, name: str, photo: str | None
-) -> sqlite3.Row:
+    db: psycopg.Connection, user_id: int, name: str, photo: str | None
+) -> dict:
     """One row per thing, per account. Where duplicate prevention lands."""
     display = normalize(name)
     if not display:
@@ -203,48 +203,50 @@ def _find_or_create_item(
 
     key = key_for(display)
     row = db.execute(
-        "SELECT * FROM items WHERE user_id = ? AND name_key = ?", (user_id, key)
+        "SELECT * FROM items WHERE user_id = %s AND name_key = %s", (user_id, key)
     ).fetchone()
     if row:
         # Freshen the display photo so the newest picture is the one shown.
         if photo:
-            db.execute("UPDATE items SET photo = ? WHERE id = ?", (photo, row["id"]))
+            db.execute("UPDATE items SET photo = %s WHERE id = %s", (photo, row["id"]))
             db.commit()
-            row = db.execute("SELECT * FROM items WHERE id = ?", (row["id"],)).fetchone()
+            row = db.execute("SELECT * FROM items WHERE id = %s", (row["id"],)).fetchone()
         return row
 
-    cursor = db.execute(
+    row = db.execute(
         """INSERT INTO items (user_id, name, name_key, category, photo, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)
+           RETURNING *""",
         (user_id, display, key, guess_category(display), photo, utcnow_iso()),
-    )
+    ).fetchone()
     db.commit()
-    return db.execute("SELECT * FROM items WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return row
 
 
-def _find_or_create_haul(db: sqlite3.Connection, user_id: int, store: str) -> sqlite3.Row:
+def _find_or_create_haul(db: psycopg.Connection, user_id: int, store: str) -> dict:
     """A trip is 'one store, one day' -- inferred, so nobody taps 'start trip'."""
     display = normalize(store) or "Unknown store"
     key = key_for(display)
     today = datetime.now().date().isoformat()
 
     row = db.execute(
-        "SELECT * FROM hauls WHERE user_id = ? AND store_key = ? AND shopped_on = ?",
+        "SELECT * FROM hauls WHERE user_id = %s AND store_key = %s AND shopped_on = %s",
         (user_id, key, today),
     ).fetchone()
     if row:
         return row
 
-    cursor = db.execute(
+    row = db.execute(
         """INSERT INTO hauls (user_id, store, store_key, shopped_on, created_at)
-           VALUES (?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s)
+           RETURNING *""",
         (user_id, display, key, today, utcnow_iso()),
-    )
+    ).fetchone()
     db.commit()
-    return db.execute("SELECT * FROM hauls WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return row
 
 
-def _purchase_payload(row: sqlite3.Row) -> dict:
+def _purchase_payload(row: dict) -> dict:
     return {
         "id": row["id"],
         "item_id": row["item_id"],
@@ -280,7 +282,7 @@ async def log_purchase(
     price: str | None = Form(None),
     photo: UploadFile | None = File(None),
     user=Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     """Log one thing just bought. The date comes from here, not from her."""
     photo_name: str | None = None
@@ -290,24 +292,25 @@ async def log_purchase(
             raise HTTPException(413, "That photo is too big")
         if raw:
             try:
-                photo_name = save_photo(raw)
+                photo_name = save_photo(db, user["id"], raw)
             except Exception:
                 raise HTTPException(400, "Couldn't read that photo")
 
     item = _find_or_create_item(db, user["id"], name, photo_name)
     haul = _find_or_create_haul(db, user["id"], store)
 
-    cursor = db.execute(
+    new_id = db.execute(
         """INSERT INTO purchases (user_id, item_id, haul_id, price_cents, photo, purchased_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s)
+           RETURNING id""",
         (user["id"], item["id"], haul["id"], parse_price_cents(price), photo_name, utcnow_iso()),
-    )
+    ).fetchone()["id"]
     db.commit()
 
     count = db.execute(
-        "SELECT COUNT(*) AS n FROM purchases WHERE haul_id = ?", (haul["id"],)
+        "SELECT COUNT(*) AS n FROM purchases WHERE haul_id = %s", (haul["id"],)
     ).fetchone()["n"]
-    row = db.execute(_PURCHASE_SELECT + " WHERE p.id = ?", (cursor.lastrowid,)).fetchone()
+    row = db.execute(_PURCHASE_SELECT + " WHERE p.id = %s", (new_id,)).fetchone()
 
     return {
         "purchase": _purchase_payload(row),
@@ -319,7 +322,7 @@ async def log_purchase(
 def suggest_items(
     q: str = Query("", max_length=80),
     user=Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     """Autocomplete. Her own history first, then common groceries.
 
@@ -329,7 +332,7 @@ def suggest_items(
     known = [
         r["name"]
         for r in db.execute(
-            "SELECT name FROM items WHERE user_id = ? ORDER BY name", (user["id"],)
+            "SELECT name FROM items WHERE user_id = %s ORDER BY name", (user["id"],)
         ).fetchall()
     ]
     known_keys = {key_for(n) for n in known}
@@ -345,13 +348,17 @@ def suggest_items(
 def suggest_stores(
     q: str = Query("", max_length=80),
     user=Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     stores = [
         r["store"]
         for r in db.execute(
-            """SELECT store, MAX(created_at) AS recent FROM hauls
-               WHERE user_id = ? GROUP BY store_key ORDER BY recent DESC""",
+            # MAX(store) rather than a bare `store`: the grouping key is
+            # store_key (the normalised form), and Postgres requires every
+            # selected column to be grouped or aggregated. SQLite allowed the
+            # bare column and silently picked an arbitrary row.
+            """SELECT MAX(store) AS store, MAX(created_at) AS recent FROM hauls
+               WHERE user_id = %s GROUP BY store_key ORDER BY recent DESC""",
             (user["id"],),
         ).fetchall()
     ]
@@ -364,7 +371,7 @@ def suggest_stores(
 
 
 @app.get("/api/hauls")
-def list_hauls(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+def list_hauls(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
     rows = db.execute(
         """SELECT h.id, h.store, h.shopped_on,
                   COUNT(p.id) AS item_count,
@@ -372,9 +379,9 @@ def list_hauls(user=Depends(current_user), db: sqlite3.Connection = Depends(get_
                   SUM(COALESCE(p.price_cents, 0)) AS total_cents
            FROM hauls h
            LEFT JOIN purchases p ON p.haul_id = h.id
-           WHERE h.user_id = ?
+           WHERE h.user_id = %s
            GROUP BY h.id
-           HAVING item_count > 0
+           HAVING COUNT(p.id) > 0
            ORDER BY h.shopped_on DESC, h.id DESC""",
         (user["id"],),
     ).fetchall()
@@ -395,15 +402,15 @@ def list_hauls(user=Depends(current_user), db: sqlite3.Connection = Depends(get_
 
 @app.get("/api/hauls/{haul_id}")
 def get_haul(
-    haul_id: int, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)
+    haul_id: int, user=Depends(current_user), db: psycopg.Connection = Depends(get_db)
 ):
     haul = db.execute(
-        "SELECT * FROM hauls WHERE id = ? AND user_id = ?", (haul_id, user["id"])
+        "SELECT * FROM hauls WHERE id = %s AND user_id = %s", (haul_id, user["id"])
     ).fetchone()
     if not haul:
         raise HTTPException(404, "No such haul")
     rows = db.execute(
-        _PURCHASE_SELECT + " WHERE p.haul_id = ? ORDER BY p.id DESC", (haul_id,)
+        _PURCHASE_SELECT + " WHERE p.haul_id = %s ORDER BY p.id DESC", (haul_id,)
     ).fetchall()
     return {
         "haul": {"id": haul["id"], "store": haul["store"], "shopped_on": haul["shopped_on"]},
@@ -415,7 +422,7 @@ def get_haul(
 def recent_purchases(
     limit: int = Query(15, ge=1, le=100),
     user=Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     """The last few things logged, newest first.
 
@@ -424,18 +431,18 @@ def recent_purchases(
     """
     rows = db.execute(
         _PURCHASE_SELECT
-        + " WHERE p.user_id = ? ORDER BY p.purchased_at DESC, p.id DESC LIMIT ?",
+        + " WHERE p.user_id = %s ORDER BY p.purchased_at DESC, p.id DESC LIMIT %s",
         (user["id"], limit),
     ).fetchall()
     return {"purchases": [_purchase_payload(r) for r in rows]}
 
 
 @app.get("/api/rate/pending")
-def pending_ratings(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+def pending_ratings(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
     """"Rate your last haul" -- everything bought but not yet judged."""
     rows = db.execute(
         _PURCHASE_SELECT
-        + """ WHERE p.user_id = ? AND p.liked IS NULL
+        + """ WHERE p.user_id = %s AND p.liked IS NULL
               ORDER BY p.purchased_at DESC, p.id DESC""",
         (user["id"],),
     ).fetchall()
@@ -451,28 +458,28 @@ def rate_purchase(
     purchase_id: int,
     rating: Rating,
     user=Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     # The user_id in the WHERE clause is what stops one account rating another's
     # purchases by guessing an id.
     updated = db.execute(
-        "UPDATE purchases SET liked = ?, rated_at = ? WHERE id = ? AND user_id = ?",
-        (1 if rating.liked else 0, utcnow_iso(), purchase_id, user["id"]),
+        "UPDATE purchases SET liked = %s, rated_at = %s WHERE id = %s AND user_id = %s",
+        (rating.liked, utcnow_iso(), purchase_id, user["id"]),
     ).rowcount
     db.commit()
     if not updated:
         raise HTTPException(404, "No such purchase")
-    row = db.execute(_PURCHASE_SELECT + " WHERE p.id = ?", (purchase_id,)).fetchone()
+    row = db.execute(_PURCHASE_SELECT + " WHERE p.id = %s", (purchase_id,)).fetchone()
     return {"purchase": _purchase_payload(row)}
 
 
 @app.post("/api/purchases/{purchase_id}/unrate")
 def unrate_purchase(
-    purchase_id: int, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)
+    purchase_id: int, user=Depends(current_user), db: psycopg.Connection = Depends(get_db)
 ):
     """Undo, because a mis-tap shouldn't be permanent."""
     updated = db.execute(
-        "UPDATE purchases SET liked = NULL, rated_at = NULL WHERE id = ? AND user_id = ?",
+        "UPDATE purchases SET liked = NULL, rated_at = NULL WHERE id = %s AND user_id = %s",
         (purchase_id, user["id"]),
     ).rowcount
     db.commit()
@@ -483,22 +490,22 @@ def unrate_purchase(
 
 @app.delete("/api/purchases/{purchase_id}")
 def delete_purchase(
-    purchase_id: int, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)
+    purchase_id: int, user=Depends(current_user), db: psycopg.Connection = Depends(get_db)
 ):
     row = db.execute(
-        "SELECT photo FROM purchases WHERE id = ? AND user_id = ?", (purchase_id, user["id"])
+        "SELECT photo FROM purchases WHERE id = %s AND user_id = %s", (purchase_id, user["id"])
     ).fetchone()
     if not row:
         raise HTTPException(404, "No such purchase")
-    db.execute("DELETE FROM purchases WHERE id = ?", (purchase_id,))
+    db.execute("DELETE FROM purchases WHERE id = %s", (purchase_id,))
     db.commit()
     # Only drop the file if nothing still points at it for display.
     still_used = db.execute(
-        "SELECT 1 FROM items WHERE photo = ? UNION SELECT 1 FROM purchases WHERE photo = ?",
+        "SELECT 1 FROM items WHERE photo = %s UNION SELECT 1 FROM purchases WHERE photo = %s",
         (row["photo"], row["photo"]),
     ).fetchone()
     if not still_used:
-        delete_photo(row["photo"])
+        delete_photo(db, row["photo"])
     return {"ok": True}
 
 
@@ -508,7 +515,7 @@ def delete_purchase(
 
 
 @app.get("/api/shopping-list")
-def shopping_list(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+def shopping_list(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
     """What she liked, what she didn't, and where each thing was cheapest.
 
     Two buckets plus the not-yet-rated. Prices come from what was actually paid,
@@ -517,12 +524,12 @@ def shopping_list(user=Depends(current_user), db: sqlite3.Connection = Depends(g
     rows = db.execute(
         """SELECT i.id, i.name, i.category, i.photo,
                   COUNT(p.id) AS times_bought,
-                  SUM(CASE WHEN p.liked = 1 THEN 1 ELSE 0 END) AS likes,
-                  SUM(CASE WHEN p.liked = 0 THEN 1 ELSE 0 END) AS dislikes,
+                  SUM(CASE WHEN p.liked IS TRUE  THEN 1 ELSE 0 END) AS likes,
+                  SUM(CASE WHEN p.liked IS FALSE THEN 1 ELSE 0 END) AS dislikes,
                   MAX(p.purchased_at) AS last_purchased_at
            FROM items i
            JOIN purchases p ON p.item_id = i.id
-           WHERE i.user_id = ?
+           WHERE i.user_id = %s
            GROUP BY i.id
            ORDER BY likes DESC, last_purchased_at DESC""",
         (user["id"],),
@@ -530,11 +537,13 @@ def shopping_list(user=Depends(current_user), db: sqlite3.Connection = Depends(g
 
     # Cheapest price seen per item per store.
     price_rows = db.execute(
-        """SELECT p.item_id, h.store,
+        # Same grouping rule as above: h.store must be aggregated because the
+        # group is (item, store_key).
+        """SELECT p.item_id, MAX(h.store) AS store,
                   MIN(p.price_cents) AS cheapest
            FROM purchases p
            JOIN hauls h ON h.id = p.haul_id
-           WHERE p.user_id = ? AND p.price_cents IS NOT NULL
+           WHERE p.user_id = %s AND p.price_cents IS NOT NULL
            GROUP BY p.item_id, h.store_key
            ORDER BY cheapest ASC""",
         (user["id"],),
@@ -551,7 +560,7 @@ def shopping_list(user=Depends(current_user), db: sqlite3.Connection = Depends(g
            FROM purchases p
            JOIN hauls h ON h.id = p.haul_id
            WHERE p.id IN (
-               SELECT MAX(id) FROM purchases WHERE user_id = ? GROUP BY item_id
+               SELECT MAX(id) FROM purchases WHERE user_id = %s GROUP BY item_id
            )""",
         (user["id"],),
     ).fetchall()
@@ -610,11 +619,11 @@ def shopping_list(user=Depends(current_user), db: sqlite3.Connection = Depends(g
 
 
 @app.get("/api/items")
-def list_items(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+def list_items(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
     rows = db.execute(
         """SELECT i.*, COUNT(p.id) AS times_bought
            FROM items i LEFT JOIN purchases p ON p.item_id = i.id
-           WHERE i.user_id = ?
+           WHERE i.user_id = %s
            GROUP BY i.id ORDER BY i.name""",
         (user["id"],),
     ).fetchall()
@@ -637,7 +646,7 @@ def merge_items(
     source_id: int,
     target_id: int,
     user=Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     """Fold "Milk 2%" into "Milk", history and all.
 
@@ -647,18 +656,18 @@ def merge_items(
         raise HTTPException(400, "An item can't be merged into itself")
 
     source = db.execute(
-        "SELECT * FROM items WHERE id = ? AND user_id = ?", (source_id, user["id"])
+        "SELECT * FROM items WHERE id = %s AND user_id = %s", (source_id, user["id"])
     ).fetchone()
     target = db.execute(
-        "SELECT * FROM items WHERE id = ? AND user_id = ?", (target_id, user["id"])
+        "SELECT * FROM items WHERE id = %s AND user_id = %s", (target_id, user["id"])
     ).fetchone()
     if not source or not target:
         raise HTTPException(404, "No such item")
 
-    db.execute("UPDATE purchases SET item_id = ? WHERE item_id = ?", (target_id, source_id))
+    db.execute("UPDATE purchases SET item_id = %s WHERE item_id = %s", (target_id, source_id))
     if not target["photo"] and source["photo"]:
-        db.execute("UPDATE items SET photo = ? WHERE id = ?", (source["photo"], target_id))
-    db.execute("DELETE FROM items WHERE id = ?", (source_id,))
+        db.execute("UPDATE items SET photo = %s WHERE id = %s", (source["photo"], target_id))
+    db.execute("DELETE FROM items WHERE id = %s", (source_id,))
     db.commit()
     return {"ok": True, "merged_into": target["name"]}
 
@@ -669,10 +678,10 @@ def rename_item(
     name: str | None = Form(None),
     category: str | None = Form(None),
     user=Depends(current_user),
-    db: sqlite3.Connection = Depends(get_db),
+    db: psycopg.Connection = Depends(get_db),
 ):
     item = db.execute(
-        "SELECT * FROM items WHERE id = ? AND user_id = ?", (item_id, user["id"])
+        "SELECT * FROM items WHERE id = %s AND user_id = %s", (item_id, user["id"])
     ).fetchone()
     if not item:
         raise HTTPException(404, "No such item")
@@ -681,14 +690,14 @@ def rename_item(
         display = normalize(name)
         key = key_for(display)
         clash = db.execute(
-            "SELECT id FROM items WHERE user_id = ? AND name_key = ? AND id != ?",
+            "SELECT id FROM items WHERE user_id = %s AND name_key = %s AND id != %s",
             (user["id"], key, item_id),
         ).fetchone()
         if clash:
             raise HTTPException(409, f"'{display}' already exists — merge them instead")
-        db.execute("UPDATE items SET name = ?, name_key = ? WHERE id = ?", (display, key, item_id))
+        db.execute("UPDATE items SET name = %s, name_key = %s WHERE id = %s", (display, key, item_id))
     if category:
-        db.execute("UPDATE items SET category = ? WHERE id = ?", (category, item_id))
+        db.execute("UPDATE items SET category = %s WHERE id = %s", (category, item_id))
     db.commit()
     return {"ok": True}
 
@@ -700,7 +709,7 @@ def rename_item(
 
 @app.get("/photos/{filename}")
 def get_photo(
-    filename: str, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)
+    filename: str, user=Depends(current_user), db: psycopg.Connection = Depends(get_db)
 ):
     """Served through a route rather than StaticFiles so it can be authorised.
 
@@ -711,19 +720,17 @@ def get_photo(
     if not _PHOTO_NAME_RE.match(filename):
         raise HTTPException(404, "No such photo")
 
-    owns = db.execute(
-        """SELECT 1 FROM items    WHERE user_id = ? AND photo = ?
-           UNION
-           SELECT 1 FROM purchases WHERE user_id = ? AND photo = ?""",
-        (user["id"], filename, user["id"], filename),
-    ).fetchone()
-    if not owns:
+    # Ownership is now the photos row itself -- load_photo filters on user_id,
+    # so a wrong owner is indistinguishable from a missing photo.
+    data = load_photo(db, user["id"], filename)
+    if data is None:
         raise HTTPException(404, "No such photo")
-
-    path = PHOTO_DIR / filename
-    if not path.is_file():
-        raise HTTPException(404, "No such photo")
-    return FileResponse(path, media_type="image/jpeg")
+    return Response(
+        content=data,
+        media_type="image/jpeg",
+        # Content-addressed ids never change, so let the browser keep them.
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 # --------------------------------------------------------------------------
@@ -737,12 +744,12 @@ _EXPORT_SQL = """
     FROM purchases p
     JOIN items i ON i.id = p.item_id
     JOIN hauls h ON h.id = p.haul_id
-    WHERE p.user_id = ?
+    WHERE p.user_id = %s
     ORDER BY p.purchased_at DESC, p.id DESC
 """
 
 
-def _export_rows(db: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
+def _export_rows(db: psycopg.Connection, user_id: int) -> list[dict]:
     return db.execute(_EXPORT_SQL, (user_id,)).fetchall()
 
 
@@ -777,7 +784,7 @@ def _csv_text(rows) -> str:
 
 
 @app.get("/api/export.csv")
-def export_csv(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+def export_csv(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
     """Every purchase as a spreadsheet."""
     text = _csv_text(_export_rows(db, user["id"]))
     return Response(
@@ -791,9 +798,13 @@ def export_csv(user=Depends(current_user), db: sqlite3.Connection = Depends(get_
 
 
 @app.get("/api/export.pdf")
-def export_pdf(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+def export_pdf(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
     """The readable one -- opens straight in Safari on a phone."""
-    pdf = build_pdf(_export_rows(db, user["id"]), user["email"], PHOTO_DIR)
+    pdf = build_pdf(
+        _export_rows(db, user["id"]),
+        user["email"],
+        lambda name: load_photo(db, user["id"], name),
+    )
     return Response(
         content=pdf,
         media_type="application/pdf",
@@ -804,7 +815,7 @@ def export_pdf(user=Depends(current_user), db: sqlite3.Connection = Depends(get_
 
 
 @app.get("/api/export.zip")
-def export_zip(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+def export_zip(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
     """Everything: the spreadsheet, the raw JSON, and every photo.
 
     This is the backup. The database lives on one disk, and one copy of anything
@@ -852,9 +863,9 @@ def export_zip(user=Depends(current_user), db: sqlite3.Connection = Depends(get_
                 if not name or name in seen:
                     continue
                 seen.add(name)
-                path = PHOTO_DIR / name
-                if path.is_file():
-                    archive.write(path, f"photos/{name}")
+                data = load_photo(db, user["id"], name)
+                if data:
+                    archive.writestr(f"photos/{name}", data)
 
     buffer.seek(0)
     return StreamingResponse(

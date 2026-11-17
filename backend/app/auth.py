@@ -16,7 +16,7 @@ and nothing to install or pay for.
 import hashlib
 import re
 import secrets
-import sqlite3
+import psycopg
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -141,10 +141,13 @@ def clear_failures(client: str) -> None:
 # --------------------------------------------------------------------------
 
 
-def create_user(db: sqlite3.Connection, email: str, password: str, display_name: str | None):
-    cursor = db.execute(
+def create_user(db: psycopg.Connection, email: str, password: str, display_name: str | None):
+    # RETURNING * instead of INSERT-then-SELECT: Postgres has no lastrowid, and
+    # this is one round trip rather than two.
+    row = db.execute(
         """INSERT INTO users (email, email_key, display_name, password_hash, created_at)
-           VALUES (?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s)
+           RETURNING *""",
         (
             email.strip(),
             email_key(email),
@@ -152,27 +155,27 @@ def create_user(db: sqlite3.Connection, email: str, password: str, display_name:
             hash_password(password),
             utcnow_iso(),
         ),
-    )
+    ).fetchone()
     db.commit()
-    return db.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return row
 
 
-def find_user_by_email(db: sqlite3.Connection, email: str):
-    return db.execute("SELECT * FROM users WHERE email_key = ?", (email_key(email),)).fetchone()
+def find_user_by_email(db: psycopg.Connection, email: str):
+    return db.execute("SELECT * FROM users WHERE email_key = %s", (email_key(email),)).fetchone()
 
 
-def create_session(db: sqlite3.Connection, user_id: int) -> str:
+def create_session(db: psycopg.Connection, user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     now = utcnow_iso()
     db.execute(
-        "INSERT INTO sessions (token, user_id, created_at, last_seen_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO sessions (token, user_id, created_at, last_seen_at) VALUES (%s, %s, %s, %s)",
         (token, user_id, now, now),
     )
     db.commit()
     return token
 
 
-def user_for_session(db: sqlite3.Connection, token: str | None):
+def user_for_session(db: psycopg.Connection, token: str | None):
     """The logged-in user for this cookie, or None. Expired sessions are dropped."""
     if not token:
         return None
@@ -180,23 +183,23 @@ def user_for_session(db: sqlite3.Connection, token: str | None):
     row = db.execute(
         """SELECT s.token, s.created_at, u.*
            FROM sessions s JOIN users u ON u.id = s.user_id
-           WHERE s.token = ?""",
+           WHERE s.token = %s""",
         (token,),
     ).fetchone()
     if not row:
         return None
 
     if parse_iso(row["created_at"]) < datetime.now(timezone.utc) - timedelta(days=SESSION_DAYS):
-        db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        db.execute("DELETE FROM sessions WHERE token = %s", (token,))
         db.commit()
         return None
 
-    db.execute("UPDATE sessions SET last_seen_at = ? WHERE token = ?", (utcnow_iso(), token))
+    db.execute("UPDATE sessions SET last_seen_at = %s WHERE token = %s", (utcnow_iso(), token))
     db.commit()
     return row
 
 
-def destroy_session(db: sqlite3.Connection, token: str | None) -> None:
+def destroy_session(db: psycopg.Connection, token: str | None) -> None:
     if token:
-        db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        db.execute("DELETE FROM sessions WHERE token = %s", (token,))
         db.commit()
