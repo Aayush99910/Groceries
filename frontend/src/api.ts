@@ -1,6 +1,11 @@
 // Every call the app makes, in one place.
 
-export type User = { id: number; email: string; display_name: string | null };
+export type User = {
+  id: number;
+  email: string;
+  display_name: string | null;
+  created_at?: string;
+};
 
 export type Purchase = {
   id: number;
@@ -104,6 +109,26 @@ export async function signup(email: string, password: string, displayName: strin
   );
 }
 
+export async function updateProfile(displayName: string) {
+  return json<{ user: User }>(
+    await fetch("/api/auth/me", {
+      ...withCookies,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: displayName }),
+    })
+  );
+}
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  return json<{ ok: boolean }>(
+    await postJson("/api/auth/password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    })
+  );
+}
+
 export async function logout() {
   return json<{ ok: boolean }>(await postJson("/api/auth/logout"));
 }
@@ -174,4 +199,22 @@ export async function shoppingList() {
 
 export async function listHauls() {
   return json<{ hauls: Haul[] }>(await fetch("/api/hauls", withCookies));
+}
+
+// ---------------------------------------------------------------- helpers
+
+/** "$4.99" from cents. */
+export function money(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * Two spellings of one store are the same store: iOS types a curly apostrophe
+ * where a laptop types a straight one, and the server already treats them alike.
+ * Compare the same way here.
+ */
+export function sameStore(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (v: string | null | undefined) =>
+    (v ?? "").replace(/[‘’]/g, "'").trim().toLowerCase();
+  return norm(a) !== "" && norm(a) === norm(b);
 }

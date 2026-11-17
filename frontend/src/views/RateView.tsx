@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 
 import DeleteButton from "../components/DeleteButton";
 import Icon from "../components/Icon";
-import ItemSheet from "../components/ItemSheet";
 import {
   NotSignedIn,
   Purchase,
@@ -14,27 +13,38 @@ import {
 } from "../api";
 
 /**
- * Screen 2: at home, after she has eaten the thing.
+ * "Did you like it?" -- one thing at a time.
  *
- * Two buttons, nothing else to decide. The photo is doing real work here -- it
- * is what makes "did you like this?" answerable a week later. Each card can also
- * be deleted, for things logged by mistake and only noticed later.
+ * The first version listed every unrated item as a card and made her scroll and
+ * hunt for the right row's buttons. That is the wrong shape for a yes/no
+ * question. Here there is exactly one item on screen, big enough to recognise
+ * from its photo, with the two answers under your thumb. Answer, and the next
+ * one slides in. A progress bar says how many are left, and you can always step
+ * back one.
  */
 export default function RateView({
   onRated,
   onSignedOut,
+  goShop,
+  goTrip,
 }: {
   onRated: () => void;
   onSignedOut: () => void;
+  goShop: () => void;
+  goTrip: () => void;
 }) {
-  const [purchases, setPurchases] = useState<Purchase[] | null>(null);
-  const [lastRated, setLastRated] = useState<{ purchase: Purchase; liked: boolean } | null>(null);
+  const [queue, setQueue] = useState<Purchase[] | null>(null);
+  // Newest last. "Back" pops from the end.
+  const [history, setHistory] = useState<{ purchase: Purchase; liked: boolean }[]>([]);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [detail, setDetail] = useState<Purchase | null>(null);
 
   useEffect(() => {
     pendingRatings()
-      .then((r) => setPurchases(r.purchases))
+      .then((r) => {
+        setQueue(r.purchases);
+        setTotal(r.purchases.length);
+      })
       .catch((err) => {
         if (err instanceof NotSignedIn) return onSignedOut();
         setError(err instanceof Error ? err.message : "Couldn't load");
@@ -42,42 +52,49 @@ export default function RateView({
   }, []);
 
   async function rate(purchase: Purchase, liked: boolean) {
-    // Optimistic: the card leaves immediately, undo puts it back.
-    setPurchases((current) => (current ?? []).filter((p) => p.id !== purchase.id));
-    setLastRated({ purchase, liked });
+    // Optimistic: the next item appears immediately; a failure puts this back.
+    setQueue((current) => (current ?? []).filter((p) => p.id !== purchase.id));
+    setHistory((h) => [...h, { purchase, liked }]);
     try {
       await ratePurchase(purchase.id, liked);
       onRated();
     } catch (err) {
       if (err instanceof NotSignedIn) return onSignedOut();
       setError(err instanceof Error ? err.message : "Couldn't save that");
-      setPurchases((current) => [purchase, ...(current ?? [])]);
-      setLastRated(null);
+      setQueue((current) => [purchase, ...(current ?? [])]);
+      setHistory((h) => h.filter((entry) => entry.purchase.id !== purchase.id));
     }
   }
 
-  async function undo() {
-    if (!lastRated) return;
-    const { purchase } = lastRated;
-    setLastRated(null);
-    await unratePurchase(purchase.id).catch(() => undefined);
-    setPurchases((current) => [purchase, ...(current ?? [])]);
+  async function back() {
+    const last = history[history.length - 1];
+    if (!last) return;
+    setHistory((h) => h.slice(0, -1));
+    setQueue((current) => [last.purchase, ...(current ?? [])]);
+    await unratePurchase(last.purchase.id).catch(() => undefined);
     onRated();
   }
 
+  function later(purchase: Purchase) {
+    // Not ready to judge it yet: send it to the back of the line.
+    setQueue((current) => [...(current ?? []).filter((p) => p.id !== purchase.id), purchase]);
+  }
+
   async function remove(purchase: Purchase) {
-    setPurchases((current) => (current ?? []).filter((p) => p.id !== purchase.id));
+    setQueue((current) => (current ?? []).filter((p) => p.id !== purchase.id));
+    setTotal((n) => Math.max(0, n - 1));
     try {
       await deletePurchase(purchase.id);
       onRated();
     } catch (err) {
       if (err instanceof NotSignedIn) return onSignedOut();
       setError(err instanceof Error ? err.message : "Couldn't delete that");
-      setPurchases((current) => [purchase, ...(current ?? [])]);
+      setQueue((current) => [purchase, ...(current ?? [])]);
+      setTotal((n) => n + 1);
     }
   }
 
-  if (error) {
+  if (error && !queue) {
     return (
       <p className="error">
         <Icon name="close" />
@@ -85,119 +102,122 @@ export default function RateView({
       </p>
     );
   }
-  if (purchases === null) return <p className="hint">Loading…</p>;
+  if (queue === null) return <p className="hint loading">Loading…</p>;
 
-  if (purchases.length === 0) {
+  // ---------------------------------------------------------------- done
+
+  if (queue.length === 0) {
+    const liked = history.filter((h) => h.liked).length;
     return (
       <div className="empty">
         <div className="empty-icon">
           <Icon name="check" size="1.5em" />
         </div>
         <h2>All caught up</h2>
-        <p>Everything from your last haul has a thumbs up or down.</p>
-        {lastRated && (
-          <button className="ghost" onClick={undo}>
-            <Icon name="undo" />
-            Undo {lastRated.purchase.item_name}
-          </button>
-        )}
+        <p>
+          {history.length > 0
+            ? `You rated ${history.length} thing${history.length === 1 ? "" : "s"}${
+                liked > 0 ? `, and ${liked} made your list.` : "."
+              }`
+            : "Nothing is waiting to be rated. Add things on the Trip tab and they'll show up here."}
+        </p>
+        <div className="empty-actions">
+          {history.length > 0 ? (
+            <button type="button" className="primary inline" onClick={goShop}>
+              <Icon name="list" />
+              See what to buy
+            </button>
+          ) : (
+            <button type="button" className="primary inline" onClick={goTrip}>
+              <Icon name="cart" />
+              Start a trip
+            </button>
+          )}
+          {history.length > 0 && (
+            <button type="button" className="ghost" onClick={back}>
+              <Icon name="undo" />
+              Undo {history[history.length - 1].purchase.item_name}
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
-  // Group by trip so it reads like "your Trader Joe's haul", not a flat list.
-  const groups = new Map<string, Purchase[]>();
-  for (const p of purchases) {
-    const key = `${p.store} · ${p.when}`;
-    groups.set(key, [...(groups.get(key) ?? []), p]);
-  }
+  // ---------------------------------------------------------------- one item
+
+  const current = queue[0];
+  const done = total - queue.length;
+  const src = photoUrl(current.photo);
+  const details = [current.price, current.store, current.when].filter(Boolean).join(" · ");
 
   return (
-    <div className="screen">
-      <p className="caption">
-        {purchases.length} thing{purchases.length === 1 ? "" : "s"} left to rate
-      </p>
-
-      {lastRated && (
-        <div className="notice">
-          <span className="notice-label">
-            <Icon name={lastRated.liked ? "thumbUp" : "thumbDown"} />
-            <span>{lastRated.purchase.item_name}</span>
-          </span>
-          <button className="ghost" onClick={undo}>
-            <Icon name="undo" />
-            Undo
-          </button>
+    <div className="screen rate-screen">
+      <div className="progress" aria-label={`${done} of ${total} rated`}>
+        <div className="progress-bar">
+          <div className="progress-fill" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
         </div>
-      )}
+        <span className="progress-text">
+          {done + 1} of {total}
+        </span>
+      </div>
 
-      {[...groups.entries()].map(([heading, group]) => (
-        <section key={heading}>
-          <h3 className="group-heading">
-            <span className="group-title">
-              <Icon name="store" size="1em" />
-              {heading}
-            </span>
-            <span className="group-count">{group.length}</span>
-          </h3>
-          <div className="stack-lg">
-            {group.map((p) => (
-              <article className="rate-card" key={p.id}>
-                <div className="rate-top">
-                  <button
-                    type="button"
-                    className="thumb-button"
-                    onClick={() => setDetail(p)}
-                    aria-label={`See ${p.item_name} larger`}
-                  >
-                    {photoUrl(p.photo) ? (
-                      <img className="thumb thumb-lg" src={photoUrl(p.photo)!} alt="" />
-                    ) : (
-                      <div className="thumb thumb-lg thumb-empty">
-                        <Icon name="cart" size="1.3em" />
-                      </div>
-                    )}
-                  </button>
-                  <div className="row-body">
-                    <strong className="wrap">{p.item_name}</strong>
-                    {p.price && <span className="rate-price">{p.price}</span>}
-                  </div>
-                </div>
-                <div className="rate-actions">
-                  <DeleteButton label={p.item_name} onDelete={() => remove(p)} />
-                  <button
-                    className="vote down"
-                    onClick={() => rate(p, false)}
-                    aria-label={`Did not like ${p.item_name}`}
-                  >
-                    <Icon name="thumbDown" />
-                    Skip
-                  </button>
-                  <button
-                    className="vote up"
-                    onClick={() => rate(p, true)}
-                    aria-label={`Liked ${p.item_name}`}
-                  >
-                    <Icon name="thumbUp" />
-                    Buy again
-                  </button>
-                </div>
-              </article>
-            ))}
+      {/* Keyed on the purchase so each new item animates in. */}
+      <article className="rate-stage" key={current.id}>
+        {src ? (
+          <img className="rate-photo" src={src} alt={current.item_name} />
+        ) : (
+          <div className="rate-photo rate-photo-empty">
+            <Icon name="cart" size="2.4em" />
           </div>
-        </section>
-      ))}
+        )}
+        <div className="rate-info">
+          <h2>{current.item_name}</h2>
+          <p>{details}</p>
+        </div>
+      </article>
 
-      {detail && (
-        <ItemSheet
-          name={detail.item_name}
-          photo={detail.photo}
-          price={detail.price}
-          store={detail.store}
-          when={detail.when}
-          onClose={() => setDetail(null)}
-        />
+      {error && (
+        <p className="error">
+          <Icon name="close" />
+          {error}
+        </p>
       )}
+
+      <div className="vote-row">
+        <button
+          type="button"
+          className="vote down"
+          onClick={() => rate(current, false)}
+          aria-label={`Did not like ${current.item_name}`}
+        >
+          <Icon name="thumbDown" size="1.5em" />
+          Skip it
+        </button>
+        <button
+          type="button"
+          className="vote up"
+          onClick={() => rate(current, true)}
+          aria-label={`Liked ${current.item_name}`}
+        >
+          <Icon name="thumbUp" size="1.5em" />
+          Buy again
+        </button>
+      </div>
+
+      <div className="rate-more">
+        <button type="button" className="text-btn" onClick={back} disabled={history.length === 0}>
+          <Icon name="chevronLeft" size="1em" />
+          Back
+        </button>
+        {queue.length > 1 && (
+          <button type="button" className="text-btn" onClick={() => later(current)}>
+            <Icon name="clock" size="1em" />
+            Ask me later
+          </button>
+        )}
+        <DeleteButton label={current.item_name} onDelete={() => remove(current)} />
+      </div>
     </div>
   );
 }

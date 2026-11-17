@@ -22,7 +22,13 @@ export type IconName =
   | "signOut"
   | "chevronDown"
   | "sparkle"
-  | "download";
+  | "download"
+  | "chevronLeft"
+  | "chevronRight"
+  | "user"
+  | "lock"
+  | "pencil"
+  | "clock";
 
 type Props = {
   name: IconName;
@@ -140,6 +146,37 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M12 3.5v11" />
       <path d="M7.5 10.5 12 15l4.5-4.5" />
       <path d="M4 17.5v1.6a1.9 1.9 0 0 0 1.9 1.9h12.2a1.9 1.9 0 0 0 1.9-1.9v-1.6" />
+    </>
+  ),
+
+  chevronLeft: <path d="M15 5l-7 7 7 7" />,
+  chevronRight: <path d="M9 5l7 7-7 7" />,
+
+  user: (
+    <>
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M4.6 20c.9-3.7 3.8-5.6 7.4-5.6s6.5 1.9 7.4 5.6" />
+    </>
+  ),
+
+  lock: (
+    <>
+      <rect x="5" y="10.5" width="14" height="10" rx="2.5" />
+      <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+    </>
+  ),
+
+  pencil: (
+    <>
+      <path d="M4 20h4L19.2 8.8a2.1 2.1 0 0 0-3-3L5 17v3z" />
+      <path d="M14.5 7.5l3 3" />
+    </>
+  ),
+
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.5V12l3 2" />
     </>
   ),
 

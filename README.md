@@ -2,15 +2,30 @@
 
 A tiny web app so she doesn't have to think in the grocery store.
 
-Three screens, one job each:
+Three tabs, one job each, plus a profile page:
 
 | Screen | When | What she does |
 | --- | --- | --- |
-| **Log** | in the aisle | name, store, rough price, photo → one tap (and delete, for typos) |
-| **Rate** | at home, after eating it | thumbs up or thumbs down |
-| **Shop** | next trip | reads the list of things she liked, with prices |
+| **Shop** — *What to buy* | before and during a trip | pick a store, see what she liked there and what it cost; tap **+** to add it to her trip in two taps |
+| **Trip** | in the aisle | say which store she's at (once), then add things as they go in the trolley; a basket shows the running total |
+| **Rate** | at home, after eating it | one item at a time, big photo: **Skip it** or **Buy again**, with Back and "Ask me later" |
+| **Profile** (tap the avatar) | any time | name and email, stats about her shopping, where she shops, exports, change password, sign out |
 
 The date is filled in by the backend. Nothing else is asked of her.
+
+### Why it's shaped this way
+
+- **Shop is answering a question**, "I'm at Safeway, what do I usually get and what
+  does it cost?", not showing a log. The store chips filter to what she bought there,
+  at the price she paid there, and flag anything cheaper elsewhere.
+- **Trip** puts the store first because it's the one thing that doesn't change
+  mid-shop. A trip is whatever was bought at that store in the last 8 hours. It uses
+  the clock, not the server's "today" label, which is in UTC and would flip to
+  "yesterday" mid-afternoon on the US west coast.
+- **Rate** is one item at a time because it's a yes/no question: scrolling a list to
+  find the right row's buttons was the hard part.
+- Things waiting for a rating are never a bucket on the Shop screen. A banner points
+  to the Rate tab instead, so there's one place to do it.
 
 ## Stack
 
@@ -184,6 +199,8 @@ without one.
 | `POST` | `/api/auth/login` | `{email, password}` |
 | `POST` | `/api/auth/logout` | drops the session |
 | `GET` | `/api/auth/me` | current user, or `null` — never 401s |
+| `PATCH` | `/api/auth/me` | `{display_name}`, rename yourself |
+| `POST` | `/api/auth/password` | `{current_password, new_password}`, signs out your other devices |
 | `POST` | `/api/purchases` | log one item (multipart: name, store, price, photo) |
 | `GET` | `/api/suggest/items?q=` | autocomplete item names |
 | `GET` | `/api/suggest/stores?q=` | autocomplete store names |
