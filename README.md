@@ -15,16 +15,27 @@ The date is filled in by the backend. Nothing else is asked of her.
 ## Stack
 
 - **FastAPI** — the API
-- **SQLite** — the database, via Python's built-in `sqlite3` with hand-written SQL (no ORM)
+- **PostgreSQL** (Neon) — the database, via `psycopg` with hand-written SQL (no ORM)
 - **React + Vite + TypeScript** — the frontend
 - **Inline SVG icons** — hand-drawn in `components/Icon.tsx`; no icon library, no font
-- **Pillow** — shrinks phone photos
-- **`hashlib.scrypt`** — password hashing, also standard library
+- **Pillow** — shrinks phone photos, which are then stored in Postgres
+- **`hashlib.scrypt`** — password hashing, from the standard library
+- **Docker + Render** (API), **Netlify** (frontend) — see [Deployment](#deployment)
 
-No Docker, no Redis, no LLM, no cloud account, no paid services. It's one Python
-process and one file on disk.
+No Redis, no LLM, no object storage. The only paid-for-nothing services are the
+three free tiers above.
 
 ## Running it
+
+You need a Postgres database to run against, locally too. Put its connection string
+in `backend/.env` (gitignored):
+
+```
+DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
+```
+
+**Use a separate database for development**, e.g. a second Neon branch. If you reuse
+the production string, your local testing writes to the live data.
 
 Install once:
 
@@ -47,9 +58,7 @@ frontend never needs to know the backend's address.
 
 ### On her phone
 
-`dev.sh` is for developing. To actually serve the app, use `./serve.sh` — see
-[Hosting](#hosting) for the full setup, including keeping the Mac awake and
-starting on login.
+The deployed site is the normal way to use it — see [Deployment](#deployment).
 
 For hot reload while testing on the phone, run `./dev.sh` and open
 `http://aayushs-macbook-air.local:5173` — `vite --host` binds to the LAN already,
@@ -79,35 +88,38 @@ How passwords are stored, in [`backend/app/auth.py`](backend/app/auth.py):
   tells an attacker which emails are registered.
 - 10 failed attempts from one address triggers a 15-minute lockout.
 
-The session is a random 32-byte token in an **`HttpOnly`**, `SameSite=Lax` cookie,
-valid 180 days, with the sessions themselves in the database so restarting the
-server doesn't sign anyone out mid-shop. `HttpOnly` means page JavaScript can't
-read it, so an XSS bug can't steal it.
+The session is a random 32-byte token in an **`HttpOnly`**, `SameSite=Lax` cookie
+(also `Secure` when `GROCERY_HTTPS=1`, as it is in production), valid 180 days, with
+the sessions themselves in the database so a restart — which a free host does
+whenever it likes — doesn't sign anyone out mid-shop. `HttpOnly` means page
+JavaScript can't read it, so an XSS bug can't steal it.
 
 ### Resetting a forgotten password
 
-No reset emails, so you do it by hand:
+No reset emails, so you do it by hand. This runs against whichever database
+`backend/.env` points at — **the live one, if that's the production string**:
 
 ```bash
 cd backend && ./.venv/bin/python -c "
 from app.auth import hash_password
 from app.db import connect
 with connect() as c:
-    c.execute('UPDATE users SET password_hash = ? WHERE email_key = ?',
+    c.execute('UPDATE users SET password_hash = %s WHERE email_key = %s',
               (hash_password('the-new-password'), 'her@example.com'))
 "
 ```
 
 ## The database
 
-Everything lives in one file: `backend/data/groceries.db`. Copy it to back up,
-delete it to start over. It's gitignored, so real data never enters the repo.
+PostgreSQL on Neon. The tables are created on startup from `schema.sql`, and the
+connection string comes from `DATABASE_URL` — never from the repo. Open a SQL shell
+with:
 
 ```bash
-sqlite3 backend/data/groceries.db
+psql "$DATABASE_URL"
 ```
 
-Then `.tables`, `.schema items`, or:
+(Neon's dashboard also has a SQL editor.) Then `\dt`, `\d items`, or:
 
 ```sql
 SELECT u.email, i.name, h.store, p.price_cents, p.liked
@@ -118,13 +130,12 @@ JOIN users u ON u.id = p.user_id
 ORDER BY p.purchased_at DESC;
 ```
 
-[DB Browser for SQLite](https://sqlitebrowser.org) is a good free GUI if you'd
-rather click than type.
-
-Schema lives in [`backend/app/schema.sql`](backend/app/schema.sql) — five tables:
+Schema lives in [`backend/app/schema.sql`](backend/app/schema.sql) — six tables:
 
 - **users** — email, display name, password hash.
 - **sessions** — active logins, one row per signed-in device.
+- **photos** — the resized JPEG bytes, owned by a user. Stored in the database
+  because the host's disk is wiped on every deploy.
 - **items** — "the thing", once, per person. Strawberries are one row forever.
 - **hauls** — one shopping trip. Created automatically per store per day, so nobody
   has to tap "start a trip".
@@ -197,9 +208,8 @@ Deliberately left out:
   `curl` for now.
 - **No password reset or email verification.** Both need a mail service — see the
   by-hand reset above.
-- **No HTTPS on the LAN setup.** The session cookie is `HttpOnly` and
-  `SameSite=Lax`. It is only marked `Secure` when you set `GROCERY_HTTPS=1`, which
-  you should do the moment it's behind TLS — see Hosting below.
+- **No account deletion in the app.** There's no endpoint; removing an account is a
+  `DELETE FROM users WHERE email_key = …` in SQL, and the cascade clears the rest.
 - **No "how often does she rebuy this"** — no cadence, no reordering by urgency.
   The list is sorted by how much she liked something. Once there are a few months of
   history, that's the obvious next step.
@@ -208,191 +218,119 @@ Deliberately left out:
 - **No sharing between accounts.** If you and she both want to see one list, you'd
   add a `households` table and scope by that instead of `user_id`.
 
-## Hosting
+## Deployment
 
-Free tiers change constantly, so check current terms before committing. What
-matters for *this* app is one thing: **it keeps state in files.** The SQLite
-database and the photos both live on disk, so any host without a persistent disk
-will silently lose her data on the next restart or deploy.
+It's live, in three pieces:
 
-### Now: run it on your Mac
+```
+phone ──► Netlify (React app) ──► Render (FastAPI, in Docker) ──► Neon (Postgres)
+          static files + proxy     the API                         data and photos
+```
 
-For two people this is the best option, not a compromise. One command:
+| Piece | What it does | Configured by |
+| --- | --- | --- |
+| **Netlify** | Serves the built React app and forwards `/api/*` and `/photos/*` to Render | [`netlify.toml`](netlify.toml) |
+| **Render** | Runs the API from [`backend/Dockerfile`](backend/Dockerfile) | environment variables (below) |
+| **Neon** | Postgres: all the rows, and the photos as `BYTEA` | `DATABASE_URL` |
+
+Everything redeploys on `git push` to `main`.
+
+### Why it's shaped this way
+
+**The host's disk is ephemeral.** Render's filesystem is wiped on every deploy and
+restart, so nothing can live in a file. That's why the database is Postgres on Neon
+and why photos are stored *in* it (see the comment on the `photos` table in
+[`schema.sql`](backend/app/schema.sql) for why that beats object storage at this
+size, and when it stops being true).
+
+**Netlify proxies the API instead of the browser calling Render directly.** The
+rewrites in `netlify.toml` use `status = 200`, so Netlify fetches from Render
+server-side and answers as itself. The browser only ever talks to one origin. That
+matters for login: a direct call to another domain makes the session cookie
+third-party, and Safari blocks those by default — which would break sign-in on
+exactly the phone this is for. With the proxy there's also no CORS to maintain.
+
+The `/*` → `/index.html` rule must stay **last** in `netlify.toml`. Netlify applies
+the first match, so a catch-all above the others would serve `index.html` for API
+calls.
+
+### Render setup
+
+New → Web Service, connect the repo, then:
+
+| Setting | Value |
+| --- | --- |
+| Root directory | `backend` |
+| Runtime | Docker |
+| Health check path | `/healthz` |
+| `DATABASE_URL` | your Neon connection string |
+| `GROCERY_HTTPS` | `1` |
+
+`GROCERY_HTTPS=1` marks the session cookie `Secure`. **Don't forget it:** without it
+the cookie is weaker than it should be. (The reverse mistake — setting it on plain
+`http://` — silently drops the cookie, and login appears to do nothing. That's why
+it's off by default and only meant for hosts with TLS.)
+
+`DATABASE_URL` is a secret. It lives only in Render's environment settings and in
+the gitignored `backend/.env`. It must never be committed.
+
+`GROCERY_ALLOWED_ORIGINS` (comma-separated) is available if you ever call the API
+from another origin without the proxy. It isn't needed today.
+
+### Netlify setup
+
+Add new site → import the repo. Leave the build settings alone: `netlify.toml`
+supplies base `frontend`, command `npm run build`, publish `dist` and Node 22. Leave
+the Functions directory empty — there are none.
+
+If Render's URL ever changes, update it in the two `[[redirects]]` rules.
+
+### The free-tier catch: cold starts
+
+Render's free plan sleeps after ~15 minutes idle, and the next request takes 30–60
+seconds to wake it. That's a bad thing to meet standing in an aisle. Two ways around
+it: point a free uptime monitor (UptimeRobot, cron-job.org) at
+`https://<your-service>.onrender.com/healthz` every 10 minutes, or move to a paid
+always-on instance. Free tiers change often, so check current terms.
+
+### Checking a deployment
 
 ```bash
-./serve.sh
+curl https://<your-service>.onrender.com/healthz          # {"ok":true}
+curl https://<your-site>.netlify.app/api/auth/me          # {"user":null} → proxy works
 ```
 
-That builds the frontend, serves everything from one uvicorn process, and prints
-the URLs. Then on her phone:
+For login, sign up in the browser and reload: you should stay signed in. In dev
+tools the `groceries_session` cookie should be on the Netlify domain, `Secure` and
+`HttpOnly`.
 
-```
-http://aayushs-macbook-air.local:8000
-```
+### Running from your Mac instead
 
-Use the `.local` name, not the IP. Your router hands out `192.168.1.234` by DHCP
-and it will change eventually; the `.local` name is advertised over Bonjour and
-iPhones resolve it natively, so it keeps working. No router configuration.
-
-#### Keeping it awake
-
-This is the real problem with a laptop as a server. Your Mac is set to sleep after
-1 minute idle, and `Wake for network access` is off — so once it sleeps, her phone
-gets nothing.
-
-`serve.sh` wraps uvicorn in **`caffeinate -si`**, which holds off idle and system
-sleep for exactly as long as the server runs. Quit the server and normal power
-behaviour returns immediately. No `sudo`, nothing permanent to remember you
-changed. Confirm it's working with:
-
-```bash
-pmset -g assertions | grep -i caffeinate
-```
-
-What `caffeinate` can't fix: **closing the lid still sleeps a MacBook.** Leave it
-open and on the power adapter. (An external display and power lets it run in
-clamshell, and `sudo pmset -a disablesleep 1` disables lid sleep entirely, but
-that's a permanent system change and worth avoiding unless you want it.)
-
-#### Starting it automatically
-
+Still supported, and it's the same code. [`serve.sh`](serve.sh) builds the frontend
+and serves everything from one uvicorn process wrapped in `caffeinate`, and
+[`tunnel.sh`](tunnel.sh) puts a temporary public URL on it with Cloudflare Tunnel.
 [`com.groceries.server.plist`](com.groceries.server.plist) is a LaunchAgent that
-starts the server at login and restarts it if it crashes:
-
-```bash
-cp com.groceries.server.plist ~/Library/LaunchAgents/ && launchctl load ~/Library/LaunchAgents/com.groceries.server.plist
-```
-
-To stop and remove it:
-
-```bash
-launchctl unload ~/Library/LaunchAgents/com.groceries.server.plist && rm ~/Library/LaunchAgents/com.groceries.server.plist
-```
-
-Logs go to `~/Library/Logs/groceries-server.log`. It starts at *login*, not boot,
-so after a restart you have to log in once. It runs uvicorn directly rather than
-`serve.sh`, so it doesn't depend on npm being on launchd's PATH — run `./serve.sh`
-by hand after frontend changes to rebuild `frontend/dist`.
-
-#### Reaching it when she's not on your wifi
-
-See [Reaching it from anywhere](#reaching-it-from-anywhere-cloudflare-tunnel)
-below — `./tunnel.sh`.
-
-#### The honest trade-off
-
-Your Mac has to be awake and on your network. That's fine for "she checks the list
-before shopping", and annoying if you close the lid on the way out the door. A
-Raspberry Pi solves it precisely because it's always on — but if you don't want to
-run one, the Mac is genuinely fine. Nothing about this setup is throwaway: moving
-to a Pi later is copying the folder and `data/groceries.db` across.
-
-### Reaching it from anywhere (Cloudflare Tunnel)
-
-`.local` only resolves on your own wifi. To reach the app on cellular data,
-`cloudflared` makes an **outbound** connection from this Mac to Cloudflare, which
-then serves a public HTTPS URL. No router ports are opened, so nothing on the
-internet can reach this Mac directly — the only thing exposed is the app itself.
-
-```bash
-brew install cloudflared
-```
-
-Then, with `./serve.sh` already running in another terminal:
-
-```bash
-./tunnel.sh
-```
-
-It prints a `https://….trycloudflare.com` URL. Open it on her phone — works on
-cellular, nothing for her to install.
-
-#### The catch: that URL is temporary
-
-With no domain configured, `cloudflared` gives you a **quick tunnel**: the
-hostname is random and changes every time the tunnel restarts. Fine for testing,
-useless as a bookmark. Cloudflare also treats quick tunnels as best-effort, so
-they aren't meant to be relied on.
-
-A permanent URL needs a domain in your Cloudflare account. There's no free tier
-for this — a domain is roughly $10/year, and Cloudflare Registrar sells at
-wholesale with no markup. Once you own one:
-
-```bash
-cloudflared tunnel login
-cloudflared tunnel create groceries
-cloudflared tunnel route dns groceries groceries.yourdomain.com
-cloudflared tunnel run --url http://localhost:8000 groceries
-```
-
-That hostname then stays put. `brew services start cloudflared` (or a LaunchAgent
-like the server's) keeps it running across reboots.
-
-**Once you're on a stable HTTPS hostname, set `GROCERY_HTTPS=1`.** That marks the
-session cookie `Secure`. Leave it off while you're still using the plain-http LAN
-URL, because a `Secure` cookie is silently dropped over http and login just
-appears to do nothing.
-
-Note that traffic through the tunnel is encrypted either way — the `Secure` flag
-only stops the browser from ever sending the cookie over an unencrypted
-connection. It's defence in depth, not the encryption itself.
-
-If you'd rather nothing be publicly reachable at all, [Tailscale](https://tailscale.com)
-is the alternative: a private network between just your devices, free, also with no
-open ports. The trade-off is that she'd need the app installed and an invite.
-
-### If you want it public
-
-**Serve both halves from one host.** FastAPI already serves `frontend/dist`, so
-you don't need Netlify yet — and splitting them means cross-origin cookies and a
-CORS list to maintain for no benefit at this size. Netlify is excellent, but it
-only hosts the static half; you'd still need somewhere for Python.
-
-Two shapes, depending on whether you keep SQLite:
-
-**Keep SQLite — needs a persistent disk.**
-- **Oracle Cloud Always Free** is the most generous: always-on VMs plus a lot of
-  block storage, free indefinitely. It's a plain Linux box, so it's the most setup.
-- **Fly.io** with a volume is the easiest deploy that keeps a real disk. Note their
-  free allowance has shrunk over the years — expect a small monthly bill, not zero.
-
-**Move off SQLite — then almost any free tier works.**
-- Database → **Neon** or **Supabase** (both free Postgres, a few hundred MB).
-- Photos → **Cloudflare R2** or **Backblaze B2** (both ~10GB free; R2 has no egress
-  fees). This is the change that actually matters — 10GB is thousands of photos at
-  our ~4KB-to-200KB each.
-- Then the API can live anywhere, including **Render**'s free tier.
-
-The catch with free PaaS tiers is **cold starts**: Render's free plan sleeps after
-~15 minutes idle and takes 30–60s to wake. That is a bad thing to discover while
-standing in an aisle holding strawberries. Anything always-on avoids it.
-
-### Whatever you pick
-
-Set `GROCERY_HTTPS=1` in the environment once TLS is on. That marks the session
-cookie `Secure` so the browser will refuse to send it over plain http. It's off by
-default because a `Secure` cookie is silently dropped on the http:// LAN setup,
-which looks exactly like "login does nothing".
+starts it at login. Note that it uses whatever `DATABASE_URL` is in `backend/.env`,
+so unless you point that elsewhere you're talking to the **live** database. A Mac
+sleeps when you close the lid, which is why this is the fallback and not the plan.
 
 ## Housekeeping
 
-Deleting a purchase removes its photo, but a cascade (deleting a whole account)
-leaves the image files behind. To sweep them:
+**Backups.** The data is in Neon, not on your machine, so nothing here is a backup
+you control. Use the app's own export — **ZIP** (or `/api/export.zip`) bundles the
+history and photos. Check Neon's current backup and restore terms for your plan.
 
-```bash
-cd backend && ./.venv/bin/python prune_photos.py
-```
+**Photos clean themselves up.** They're rows with `ON DELETE CASCADE`, so deleting a
+purchase or a whole account removes them. There are no orphaned files to sweep.
 
-It lists what it would remove; add `--delete` to actually do it. It never touches
-a file that any row still references.
+**The old SQLite file.** [`migrate_sqlite_to_postgres.py`](backend/migrate_sqlite_to_postgres.py)
+was a one-off. `backend/data/` is the pre-migration copy; it's gitignored and safe
+to delete once you're sure you won't need to roll back.
 
 ## Scaling, when it matters
 
-It won't for a long time. SQLite handles this comfortably into the hundreds of
-thousands of rows with a single writer. When that stops being true, swap the
-connection in [`db.py`](backend/app/db.py) for Postgres — the queries are plain SQL
-and mostly portable, and `user_id` is already on every table. FastAPI itself won't
-be the limit.
-
-The one thing that would need real work is photos: they're on local disk, so a
-second server means object storage.
+It won't for a long time. The queries are plain SQL with `user_id` on every table,
+and FastAPI won't be the limit. What will run out first is the free Postgres size,
+and photos are the bulk of it. When that happens, move them to object storage (R2 or
+B2) — the photo code in [`photos.py`](backend/app/photos.py) is the only place that
+changes.
