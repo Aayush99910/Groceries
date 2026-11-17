@@ -125,8 +125,8 @@ export default function LogView({
   }
 
   return (
-    <div className="stack">
-      <form className="stack" onSubmit={submit}>
+    <div className="screen">
+      <form className="form-card" onSubmit={submit}>
         <Suggest
           label="Store"
           value={store}
@@ -135,7 +135,7 @@ export default function LogView({
           placeholder="Trader Joe's"
         />
 
-        <div ref={nameRef}>
+        <div ref={nameRef} className="field-lg">
           <Suggest
             label="What is it?"
             value={name}
@@ -145,48 +145,54 @@ export default function LogView({
           />
         </div>
 
-        <div className="field">
-          <label htmlFor="price">
-            Price <span className="muted">— roughly is fine, or skip it</span>
-          </label>
-          <div className="input-prefix">
-            <span>$</span>
-            <input
-              id="price"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="4.99"
-              // Brings up the number pad on her phone instead of a full keyboard.
-              inputMode="decimal"
-              autoComplete="off"
-            />
-          </div>
-        </div>
-
-        <div className="field">
-          <label>Photo</label>
-          {preview ? (
-            <div className="photo-preview">
-              <img src={preview} alt="" />
-              <button type="button" className="ghost" onClick={() => setPhoto(null)}>
-                <Icon name="camera" />
-                Retake
-              </button>
-            </div>
-          ) : (
-            <label className="photo-drop">
-              <Icon name="camera" size="1.4em" />
-              <span>Take a photo</span>
-              <input
-                type="file"
-                accept="image/*"
-                // `capture` opens the rear camera straight away on a phone, and
-                // falls back to a normal file picker on a laptop.
-                capture="environment"
-                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-              />
+        {/* Price and photo share a row: both are optional, and together they
+            keep the Add button above the fold on a small phone. */}
+        <div className="two-up">
+          <div className="field">
+            <label htmlFor="price">
+              Price <span className="muted">· optional</span>
             </label>
-          )}
+            <div className="input-prefix">
+              <span>$</span>
+              <input
+                id="price"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="4.99"
+                // Brings up the number pad on her phone instead of a full keyboard.
+                inputMode="decimal"
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <div className="field">
+            <label>Photo</label>
+            {preview ? (
+              <button
+                type="button"
+                className="photo-chip has-photo"
+                onClick={() => setPhoto(null)}
+                aria-label="Remove photo and retake"
+              >
+                <img src={preview} alt="" />
+                <span>Retake</span>
+              </button>
+            ) : (
+              <label className="photo-chip">
+                <Icon name="camera" size="1.25em" />
+                <span>Add photo</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  // `capture` opens the rear camera straight away on a phone, and
+                  // falls back to a normal file picker on a laptop.
+                  capture="environment"
+                  onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            )}
+          </div>
         </div>
 
         {error && (
@@ -210,13 +216,13 @@ export default function LogView({
 
       {recent.length > 0 && (
         <section>
-          <h3 className="section-heading">
-            <Icon name="undo" size="1em" />
-            Just added
+          <h3 className="group-heading">
+            <span>Just added</span>
+            <span className="group-count">{recent.length}</span>
           </h3>
-          <div className="stack">
+          <div className="list-card">
             {recent.map((p) => (
-              <article className="recent-row" key={p.id}>
+              <article className="row" key={p.id}>
                 {photoUrl(p.photo) ? (
                   <img className="thumb thumb-sm" src={photoUrl(p.photo)!} alt="" />
                 ) : (
@@ -227,9 +233,10 @@ export default function LogView({
                 <div className="row-body">
                   <strong>{p.item_name}</strong>
                   <span className="row-sub">
-                    {[p.price, p.store, p.when].filter(Boolean).join("\u00a0\u00b7 ")}
+                    {[p.store, p.when].filter(Boolean).join("\u00a0\u00b7 ")}
                   </span>
                 </div>
+                {p.price && <span className="price">{p.price}</span>}
                 <DeleteButton label={p.item_name} onDelete={() => remove(p)} />
               </article>
             ))}

@@ -7,7 +7,7 @@ import { ListEntry, NotSignedIn, ShoppingList, photoUrl, shoppingList } from "..
 type Bucket = "liked" | "unrated" | "disliked";
 
 const TABS: { key: Bucket; label: string; blurb: string }[] = [
-  { key: "liked", label: "Buy again", blurb: "Things you liked, with what you paid." },
+  { key: "liked", label: "Buy again", blurb: "Tick things off as they go in the trolley. Tap one for every price." },
   { key: "unrated", label: "Not rated", blurb: "Bought, but never given a thumbs up or down." },
   { key: "disliked", label: "Skip", blurb: "You didn't like these. Walk past them." },
 ];
@@ -87,11 +87,13 @@ export default function ListView({
   const entries = data[tab];
 
   return (
-    <div className="stack">
-      <div className="tabs">
+    <div className="screen">
+      <div className="tabs" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.key}
+            role="tab"
+            aria-selected={t.key === tab}
             className={t.key === tab ? "tab active" : "tab"}
             onClick={() => setTab(t.key)}
           >
@@ -101,13 +103,13 @@ export default function ListView({
         ))}
       </div>
 
-      <p className="hint">{active.blurb}</p>
+      <p className="caption">{active.blurb}</p>
 
       {tab === "liked" && ticked.size > 0 && (
         <div className="notice">
           <span className="notice-label">
             <Icon name="cart" />
-            <span>{ticked.size} in the trolley — log them on the Log tab</span>
+            <span>{ticked.size} in the trolley · log them next</span>
           </span>
           <button className="ghost" onClick={() => setTicked(new Set())}>
             Clear
@@ -115,26 +117,31 @@ export default function ListView({
         </div>
       )}
 
-      {entries.length === 0 && <p className="hint">Nothing here yet.</p>}
+      {entries.length === 0 && <p className="caption center">Nothing here yet.</p>}
 
-      {tab === "liked"
-        ? data.liked_grouped.map((group) => (
-            <section key={group.category}>
-              <h3 className="section-heading">{group.label}</h3>
-              <div className="stack">
-                {group.items.map((entry) => (
-                  <Row
-                    key={entry.item_id}
-                    entry={entry}
-                    ticked={ticked.has(entry.item_id)}
-                    onToggle={() => toggle(entry.item_id)}
-                    onOpen={() => setDetail(entry)}
-                  />
-                ))}
-              </div>
-            </section>
-          ))
-        : entries.map((entry) => (
+      {tab === "liked" ? (
+        data.liked_grouped.map((group) => (
+          <section key={group.category}>
+            <h3 className="group-heading">
+              <span>{group.label}</span>
+              <span className="group-count">{group.items.length}</span>
+            </h3>
+            <div className="list-card">
+              {group.items.map((entry) => (
+                <Row
+                  key={entry.item_id}
+                  entry={entry}
+                  ticked={ticked.has(entry.item_id)}
+                  onToggle={() => toggle(entry.item_id)}
+                  onOpen={() => setDetail(entry)}
+                />
+              ))}
+            </div>
+          </section>
+        ))
+      ) : (
+        <div className="list-card">
+          {entries.map((entry) => (
             <Row
               key={entry.item_id}
               entry={entry}
@@ -142,6 +149,8 @@ export default function ListView({
               onOpen={() => setDetail(entry)}
             />
           ))}
+        </div>
+      )}
 
       {detail && (
         <ItemSheet
@@ -180,16 +189,14 @@ function Row({
   const cheaper =
     entry.best && entry.last_store && entry.best.store !== entry.last_store ? entry.best : null;
 
-  const subtitle = [
-    entry.last_price ? `${entry.last_price} at ${entry.last_store}` : entry.last_store,
-    entry.when,
-  ]
-    .filter(Boolean)
-    .join("\u00a0\u00b7 ");
+  // One line, always: where and when. The price has its own column, so a long
+  // store name can no longer push "today" onto a second line and make rows
+  // different heights.
+  const subtitle = [entry.last_store, entry.when].filter(Boolean).join("\u00a0\u00b7 ");
 
   return (
     <article
-      className={`list-row${ticked ? " ticked" : ""}${muted ? " muted-row" : ""}`}
+      className={`row${onOpen ? " tappable" : ""}${ticked ? " ticked" : ""}${muted ? " muted-row" : ""}`}
       onClick={onOpen}
       role={onOpen ? "button" : undefined}
     >
@@ -221,24 +228,13 @@ function Row({
         {cheaper && (
           <span className="cheaper">
             <Icon name="tag" size="0.95em" />
-            {cheaper.price} at {cheaper.store}
+            <span>
+              {cheaper.price} at {cheaper.store}
+            </span>
           </span>
         )}
       </div>
-      <div className="row-meta">
-        {entry.likes > 0 && (
-          <span className="up">
-            <Icon name="thumbUp" size="0.95em" />
-            {entry.likes}
-          </span>
-        )}
-        {entry.dislikes > 0 && (
-          <span className="down">
-            <Icon name="thumbDown" size="0.95em" />
-            {entry.dislikes}
-          </span>
-        )}
-      </div>
+      {entry.last_price && <span className="price">{entry.last_price}</span>}
     </article>
   );
 }

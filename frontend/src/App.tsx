@@ -49,9 +49,7 @@ export default function App() {
   if (user === undefined) {
     return (
       <div className="app">
-        <p className="hint" style={{ padding: "48px 0" }}>
-          Loading…
-        </p>
+        <p className="hint loading">Loading…</p>
       </div>
     );
   }
@@ -69,11 +67,15 @@ export default function App() {
       <header>
         <div className="header-row">
           <div>
-            <h1>Groceries</h1>
-            <p className="tagline">
-              {tab === "list" && "What you liked, ready to buy again"}
-              {tab === "log" && "Log what's in the trolley"}
-              {tab === "rate" && "Rate your last haul"}
+            <h1>
+              {tab === "list" && "Shopping list"}
+              {tab === "log" && "Log an item"}
+              {tab === "rate" && "Rate your haul"}
+            </h1>
+            <p className="page-sub">
+              {tab === "list" && "Things you liked, ready to buy again"}
+              {tab === "log" && "Add what's going in the trolley"}
+              {tab === "rate" && "Would you get it again?"}
             </p>
           </div>
           <button
@@ -131,7 +133,7 @@ export default function App() {
             <span className="nav-icon">
               <Icon name={t.icon} size="1em" />
             </span>
-            {t.label}
+            <span className="nav-label">{t.label}</span>
             {t.key === "rate" && pending > 0 && <span className="badge">{pending}</span>}
           </button>
         ))}

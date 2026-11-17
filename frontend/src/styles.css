@@ -1,52 +1,72 @@
-/* Phone-first. Big tap targets, one column, nothing clever.
+/* Phone-first, warm and friendly. Big tap targets, one column, nothing clever.
  *
  * The layout is a flex column of exactly 100dvh: header, scrolling main, nav.
  * That's deliberate -- the nav used to be `position: fixed` with a guessed
  * padding-bottom on the content, which Safari's collapsing toolbar broke, and
  * the submit button ended up underneath the tab bar. `dvh` tracks the toolbar,
  * and a sticky nav inside the column can never overlap its own sibling.
+ *
+ * Colour roles: green means "yes" (accent, thumbs up, ticked). Amber means
+ * "cheaper somewhere else". Red is only for thumbs down and delete.
  */
 
 :root {
-  --bg: #f7f6f3;
-  --surface: #ffffff;
-  --surface-sunk: #f1efea;
-  --border: #e6e2da;
-  --border-strong: #d6d1c6;
-  --text: #1a1917;
-  --text-soft: #57544d;
-  --muted: #857f75;
-  --accent: #16714f;
-  --accent-hover: #125c41;
-  --accent-soft: #e7f1ec;
-  --up: #16714f;
-  --down: #b23c26;
-  --down-soft: #fbeae6;
-  --radius: 14px;
-  --radius-sm: 10px;
-  --shadow: 0 1px 2px rgba(26, 25, 23, 0.05);
-  --shadow-lift: 0 4px 16px rgba(26, 25, 23, 0.1);
-  --nav-h: 58px;
+  --bg: #fbf7f0;
+  --surface: #fffefb;
+  --surface-sunk: #f3ede2;
+  --border: #ece4d5;
+  --border-strong: #dccfb9;
+  --text: #231f1a;
+  --text-soft: #5e564b;
+  --muted: #766d5e;
+
+  --accent: #1f7a55;
+  --accent-hover: #176144;
+  --accent-soft: #e4f1e9;
+  --up: #1f7a55;
+
+  --sun: #a35a15;
+  --sun-soft: #fbeedc;
+
+  --down: #b8442b;
+  --down-soft: #fbe9e3;
+
+  --radius: 16px;
+  --radius-sm: 12px;
+  --radius-lg: 20px;
+  --shadow: 0 1px 2px rgba(60, 40, 10, 0.05), 0 1px 1px rgba(60, 40, 10, 0.03);
+  --shadow-lift: 0 6px 20px rgba(60, 40, 10, 0.12);
+  --nav-h: 62px;
+
+  /* Safari's rounded system face; anything else falls back to the plain system font. */
+  --font-round: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #141517;
-    --surface: #1d1f22;
-    --surface-sunk: #26282c;
-    --border: #2e3135;
-    --border-strong: #3d4045;
-    --text: #eeece8;
-    --text-soft: #b9b6b0;
-    --muted: #8e8b85;
-    --accent: #4cbd92;
-    --accent-hover: #63cba3;
-    --accent-soft: #17352a;
-    --up: #4cbd92;
-    --down: #e58a71;
-    --down-soft: #35211c;
+    --bg: #171612;
+    --surface: #211f1a;
+    --surface-sunk: #2b2822;
+    --border: #36322a;
+    --border-strong: #4a4539;
+    --text: #f2eee6;
+    --text-soft: #c3bcae;
+    --muted: #a0978a;
+
+    --accent: #5cc79a;
+    --accent-hover: #74d3ae;
+    --accent-soft: #1c3a2d;
+    --up: #5cc79a;
+
+    --sun: #eba862;
+    --sun-soft: #3b2a17;
+
+    --down: #ee917a;
+    --down-soft: #3a2019;
+
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-    --shadow-lift: 0 4px 16px rgba(0, 0, 0, 0.45);
+    --shadow-lift: 0 6px 20px rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -88,13 +108,32 @@ body {
 }
 
 header {
-  padding: 22px 18px 12px;
+  padding: 24px 20px 14px;
 }
 
 .app > main {
   flex: 1 1 auto;
-  padding: 0 18px 28px;
+  padding: 4px 20px 32px;
   min-width: 0;
+}
+
+/* One vertical rhythm for every screen: 20px between blocks. */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.stack-lg {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 nav {
@@ -102,7 +141,13 @@ nav {
   bottom: 0;
   z-index: 30;
   display: flex;
+  padding: 6px 8px 0;
+  /* Solid first: older Safari drops the whole color-mix() line and would leave
+     the bar see-through. */
   background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  backdrop-filter: saturate(1.4) blur(14px);
   border-top: 1px solid var(--border);
   /* Clears the iPhone home indicator. */
   padding-bottom: env(safe-area-inset-bottom);
@@ -112,40 +157,73 @@ nav {
 
 h1 {
   margin: 0;
-  font-size: 25px;
-  font-weight: 700;
+  font-family: var(--font-round);
+  font-size: 30px;
+  line-height: 1.15;
+  font-weight: 750;
   letter-spacing: -0.02em;
 }
 
 h2 {
   margin: 0;
-  font-size: 18px;
-  font-weight: 650;
+  font-family: var(--font-round);
+  font-size: 19px;
+  font-weight: 700;
 }
 
-.tagline,
-.hint {
+.page-sub {
+  margin: 4px 0 0;
   color: var(--muted);
-  margin: 3px 0 0;
+  font-size: 15px;
+}
+
+.hint,
+.caption {
+  margin: 0;
+  color: var(--muted);
   font-size: 14px;
 }
 
-.hint {
-  margin: 0;
+.caption.center,
+.hint.loading {
+  text-align: center;
+  padding: 28px 0;
 }
 
 .muted {
   color: var(--muted);
   font-weight: 400;
-  font-size: 14px;
+  font-size: 13px;
 }
 
-.stack {
+/* Section titles: "Produce  3". Sentence case, so they read as words, not labels. */
+.group-heading {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 4px 8px;
+  font-family: var(--font-round);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
 }
 
+.group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.group-count {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+/* The detail sheet still uses the small-caps style for its sub-sections. */
 .section-heading {
   display: flex;
   align-items: center;
@@ -168,25 +246,26 @@ h2 {
 }
 
 .avatar {
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
-  margin-top: 3px;
-  border: 1px solid var(--border-strong);
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  margin-top: 2px;
+  border: 0;
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 15px;
+  font-family: var(--font-round);
+  font-size: 17px;
   font-weight: 700;
 }
 
 .account-menu {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
   gap: 10px;
-  margin-top: 12px;
-  padding: 11px 13px;
+  margin-top: 14px;
+  padding: 13px 14px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -202,6 +281,19 @@ h2 {
   color: var(--muted);
 }
 
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* The export links are <a>, so give them the button's look. */
+.account-actions .ghost {
+  flex: 1 1 auto;
+  justify-content: center;
+  text-decoration: none;
+}
+
 /* ---------------- form fields ---------------- */
 
 .field {
@@ -209,6 +301,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 label {
@@ -220,10 +313,10 @@ label {
 .field input {
   width: 100%;
   font-size: 16px;
-  padding: 13px 14px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
+  padding: 14px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
   color: var(--text);
   /* iOS adds its own inner shadow and rounding otherwise. */
   -webkit-appearance: none;
@@ -232,13 +325,39 @@ label {
 
 .field input::placeholder {
   color: var(--muted);
-  opacity: 0.75;
+  opacity: 0.6;
 }
 
 .field input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
+  outline: none;
   border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* The item name is the one thing she types every time, so it's the biggest box. */
+.field-lg .field input {
+  font-size: 18px;
+  padding: 16px 14px;
+}
+
+/* The form is one card, not four floating boxes. */
+.form-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.two-up {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: end;
 }
 
 /* Currency prefix sitting inside the price box. */
@@ -257,7 +376,12 @@ label {
 }
 
 .input-prefix input {
-  padding-left: 30px;
+  padding-left: 28px;
+}
+
+/* Price box and photo button sit side by side: same height, not "close". */
+.two-up .input-prefix input {
+  height: 51px;
 }
 
 .suggest-list {
@@ -266,7 +390,7 @@ label {
   left: 0;
   right: 0;
   z-index: 20;
-  margin-top: 5px;
+  margin-top: 6px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
@@ -281,7 +405,7 @@ label {
   gap: 9px;
   width: 100%;
   text-align: left;
-  padding: 12px 14px;
+  padding: 13px 14px;
   border: 0;
   border-bottom: 1px solid var(--border);
   background: none;
@@ -303,52 +427,55 @@ label {
   font-weight: 600;
 }
 
-.suggest-item.known .dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex: 0 0 6px;
-}
-
 .suggest-item .dot {
   width: 6px;
   height: 6px;
   flex: 0 0 6px;
 }
 
+.suggest-item.known .dot {
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 /* ---------------- photo ---------------- */
 
-.photo-drop {
+/* Same height as the price box beside it, so the row lines up. */
+.photo-chip {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  padding: 22px;
+  gap: 8px;
+  height: 51px;
+  padding: 0 12px;
   border: 1.5px dashed var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--surface);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
   color: var(--text-soft);
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 650;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.photo-drop input {
+.photo-chip input {
   display: none;
 }
 
-.photo-preview {
-  display: flex;
-  align-items: center;
-  gap: 13px;
+.photo-chip.has-photo {
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 4px 12px 4px 4px;
+  border-style: solid;
+  border-color: var(--border);
+  font-family: inherit;
 }
 
-.photo-preview img {
-  width: 84px;
-  height: 84px;
+.photo-chip.has-photo img {
+  width: 41px;
+  height: 41px;
   object-fit: cover;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
+  border-radius: 9px;
 }
 
 /* ---------------- buttons ---------------- */
@@ -365,34 +492,47 @@ button {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 15px;
+  padding: 16px;
   border: 0;
   border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
-  font-size: 16px;
-  font-weight: 650;
+  font-family: var(--font-round);
+  font-size: 17px;
+  font-weight: 700;
+  box-shadow: 0 2px 0 color-mix(in srgb, var(--accent) 70%, black);
+  transition: transform 0.08s ease;
 }
 
 .primary:active {
   background: var(--accent-hover);
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 .primary:disabled {
   opacity: 0.55;
 }
 
+/* In dark mode the accent is light, so the label needs to be dark to read. */
+@media (prefers-color-scheme: dark) {
+  .primary {
+    color: #0d241a;
+    box-shadow: none;
+  }
+}
+
 .ghost {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 9px 13px;
+  padding: 10px 14px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 650;
   white-space: nowrap;
 }
 
@@ -410,18 +550,17 @@ button {
 .icon-btn {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  flex: 0 0 38px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
   color: var(--muted);
 }
 
 .icon-btn:active {
   color: var(--down);
-  border-color: var(--down);
   background: var(--down-soft);
 }
 
@@ -432,36 +571,60 @@ button {
   margin: 0;
   color: var(--down);
   font-size: 14px;
+  font-weight: 550;
 }
 
-/* ---------------- cards & rows ---------------- */
+/* ---------------- lists ---------------- */
 
-.card {
-  padding: 15px;
+/* One rounded card per group, rows split by hairlines. Replaces a pile of
+   separate floating cards, which made every screen feel like a different size. */
+.list-card {
+  overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
 }
 
-.rate-card,
-.list-row,
-.recent-row {
+.row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 11px 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  gap: 10px;
+  min-height: 74px;
+  padding: 11px 14px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--border);
+}
+
+.row.tappable {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.row.tappable:active {
+  background: var(--surface-sunk);
+}
+
+.row.ticked {
+  background: var(--accent-soft);
+}
+
+.row.ticked .row-body strong {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+.muted-row {
+  opacity: 0.62;
 }
 
 .thumb {
-  width: 50px;
-  height: 50px;
-  flex: 0 0 50px;
-  border-radius: var(--radius-sm);
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 12px;
   object-fit: cover;
   background: var(--surface-sunk);
 }
@@ -470,130 +633,104 @@ button {
   display: grid;
   place-items: center;
   color: var(--muted);
-  border: 1px solid var(--border);
 }
 
 .thumb-sm {
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 11px;
+}
+
+.thumb-lg {
+  width: 76px;
+  height: 76px;
+  flex: 0 0 76px;
+  border-radius: 16px;
 }
 
 .row-body {
   flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 1px;
   min-width: 0;
 }
 
 .row-body strong {
+  max-width: 100%;
   font-size: 16px;
   font-weight: 620;
-  /* Long names truncate rather than pushing the buttons off-screen. */
+  line-height: 1.3;
+  /* Long names truncate rather than pushing the price off-screen. */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.row-sub {
-  font-size: 13.5px;
-  color: var(--muted);
-  min-width: 0;
-  /* Up to two lines, then ellipsis -- truncating to one line lost the date
-     ("...tod…"). The views join with a non-breaking space before each middot, so
-     a separator can never start a line on its own. */
+/* Rate cards have room, so the name may wrap instead of truncating. */
+.row-body strong.wrap {
+  white-space: normal;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+  font-size: 18px;
+}
+
+/* Always exactly one line. The date used to wrap and strand itself. */
+.row-sub {
+  max-width: 100%;
+  font-size: 13.5px;
+  color: var(--muted);
   overflow: hidden;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.price {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--font-round);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 .cheaper {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 13px;
-  color: var(--accent);
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 2px 8px 2px 6px;
+  border-radius: 999px;
+  background: var(--sun-soft);
+  color: var(--sun);
+  font-size: 12px;
   font-weight: 650;
 }
 
-.rate-actions {
-  display: flex;
-  gap: 7px;
-}
-
-.vote {
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 12px;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--text-soft);
-  font-size: 19px;
-}
-
-.vote.up:active {
-  background: var(--accent-soft);
-  border-color: var(--up);
-  color: var(--up);
-}
-
-.vote.down:active {
-  background: var(--down-soft);
-  border-color: var(--down);
-  color: var(--down);
-}
-
-.row-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.row-meta span {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.row-meta .up {
-  color: var(--up);
-}
-
-.row-meta .down {
-  color: var(--down);
-}
-
-.list-row.ticked {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
-.list-row.ticked .row-body strong {
-  text-decoration: line-through;
-  opacity: 0.55;
-}
-
-.muted-row {
-  opacity: 0.6;
+.cheaper span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tick {
   display: grid;
   place-items: center;
-  width: 25px;
-  height: 25px;
-  flex: 0 0 25px;
-  border: 1.5px solid var(--border-strong);
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  padding: 0;
+  border: 2px solid var(--border-strong);
   border-radius: 50%;
+  background: none;
   color: #fff;
+  cursor: pointer;
 }
 
 .tick.on {
@@ -601,30 +738,133 @@ button {
   border-color: var(--accent);
 }
 
-/* ---------------- segmented control ---------------- */
-
-.tabs {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  background: var(--surface-sunk);
-  border-radius: var(--radius);
+@media (prefers-color-scheme: dark) {
+  .tick {
+    color: #0d241a;
+  }
 }
 
-.tab {
-  flex: 1;
+/* ---------------- rate cards ---------------- */
+
+.rate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.rate-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.rate-price {
+  margin-top: 3px;
+  font-family: var(--font-round);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Wraps the thumbnail so the photo alone opens the detail sheet. */
+.thumb-button {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  line-height: 0;
+  border-radius: 16px;
+}
+
+.rate-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Votes are coloured and labelled: the two used to be identical grey outlines,
+   so you couldn't tell which was which until you tapped. */
+.vote {
+  flex: 1 1 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 8px;
+  min-height: 50px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 14px;
+  font-family: var(--font-round);
+  font-size: 15.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: transform 0.08s ease;
+}
+
+.vote:active {
+  transform: scale(0.97);
+}
+
+.vote.up {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.vote.down {
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+/* While confirming a delete, the row is just Cancel / Delete -- the votes step
+   aside so the choice is unmistakable. */
+.rate-actions:has(.confirm) .vote {
+  display: none;
+}
+
+.rate-actions .confirm {
+  flex: 1;
+}
+
+.rate-actions .confirm > * {
+  flex: 1;
+  justify-content: center;
+}
+
+/* ---------------- segmented control ---------------- */
+
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-sunk);
+  border-radius: 14px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 9px 4px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: 11px;
   background: none;
   color: var(--muted);
-  font-size: 13.5px;
-  font-weight: 650;
+  font-family: var(--font-round);
+  font-size: 14px;
+  font-weight: 700;
   white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .tab.active {
@@ -633,17 +873,32 @@ button {
   box-shadow: var(--shadow);
 }
 
+/* Every count is the same size pill, filled or not, so switching tabs never
+   nudges the labels around. */
 .tab-count {
-  font-size: 12px;
+  min-width: 22px;
   padding: 1px 6px;
-  border-radius: 8px;
-  background: var(--surface-sunk);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
   color: var(--muted);
 }
 
 .tab.active .tab-count {
   background: var(--accent);
   color: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  /* Raised, not pressed in: lighter than its track. */
+  .tab.active {
+    background: #3b372e;
+  }
+  .tab.active .tab-count {
+    color: #0d241a;
+  }
 }
 
 /* ---------------- bottom nav ---------------- */
@@ -655,9 +910,9 @@ button {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
   min-height: var(--nav-h);
-  padding: 8px 0;
+  padding: 4px 0 6px;
   border: 0;
   background: none;
   color: var(--muted);
@@ -670,48 +925,77 @@ button {
   color: var(--accent);
 }
 
+/* The active tab gets a soft pill behind its icon, like iOS. */
 .nav-icon {
   display: grid;
   place-items: center;
+  width: 58px;
+  height: 30px;
+  border-radius: 15px;
   font-size: 21px;
   line-height: 1;
+  transition: background 0.18s ease;
+}
+
+.nav-item.active .nav-icon {
+  background: var(--accent-soft);
 }
 
 .badge {
   position: absolute;
-  top: 5px;
-  left: 56%;
-  min-width: 17px;
+  top: 3px;
+  left: calc(50% + 8px);
+  min-width: 18px;
   padding: 1px 5px;
   border-radius: 9px;
   background: var(--down);
   color: #fff;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   line-height: 1.45;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+@media (prefers-color-scheme: dark) {
+  .badge {
+    color: #2a0f08;
+  }
 }
 
 /* ---------------- feedback ---------------- */
 
 .toast {
   position: fixed;
-  left: 12px;
-  right: 12px;
+  left: 16px;
+  right: 16px;
   /* Sits above the nav, including the home-indicator inset. */
-  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 12px);
+  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 14px);
   z-index: 40;
-  max-width: 596px;
+  max-width: 588px;
   margin: 0 auto;
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 13px 15px;
+  padding: 14px 16px;
   border-radius: var(--radius);
   background: var(--text);
   color: var(--bg);
   font-size: 14px;
-  font-weight: 550;
+  font-weight: 600;
   box-shadow: var(--shadow-lift);
+  animation: toast-in 0.2s ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .notice {
@@ -719,16 +1003,23 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 10px 12px 10px 14px;
   background: var(--accent-soft);
+  color: var(--accent);
   border-radius: var(--radius);
   font-size: 14px;
+  font-weight: 600;
+}
+
+.notice .ghost {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
 }
 
 .notice-label {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -740,19 +1031,19 @@ button {
 
 .empty {
   text-align: center;
-  padding: 52px 16px;
+  padding: 64px 16px;
   color: var(--muted);
 }
 
 .empty-icon {
   display: inline-grid;
   place-items: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: 14px;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
   border-radius: 50%;
-  background: var(--surface-sunk);
-  color: var(--muted);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 26px;
 }
 
@@ -763,42 +1054,49 @@ button {
 
 .empty p {
   margin: 0 auto;
-  max-width: 34ch;
-  font-size: 14px;
+  max-width: 32ch;
+  font-size: 15px;
 }
 
 .empty .ghost {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 /* ---------------- auth ---------------- */
 
 .auth {
-  padding: 46px 18px 32px;
+  padding: 56px 24px 32px;
   text-align: center;
 }
 
 .auth h1 {
-  margin: 14px 0 0;
+  margin: 18px 0 0;
 }
 
 .auth .tagline {
-  margin: 4px 0 24px;
+  margin: 6px 0 28px;
+  color: var(--muted);
+  font-size: 15px;
 }
 
 .auth-mark {
   display: inline-grid;
   place-items: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 27px;
+  width: 64px;
+  height: 64px;
+  border-radius: 19px;
+  background: linear-gradient(145deg, #2a9a70, #136548);
+  color: #fffaf0;
+  font-size: 30px;
+  box-shadow: 0 6px 16px color-mix(in srgb, #136548 35%, transparent);
 }
 
 .auth form {
   text-align: left;
+}
+
+.auth .field input {
+  background: var(--surface);
 }
 
 /* Inline delete confirmation, replacing the row's buttons in place. */
@@ -809,43 +1107,20 @@ button {
 }
 
 .danger {
-  padding: 9px 13px;
+  padding: 10px 14px;
   border: 1px solid var(--down);
   border-radius: var(--radius-sm);
   background: var(--down);
   color: #fff;
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 700;
   white-space: nowrap;
 }
 
-/* The rate card stacks: content, then a full-width row of actions. Three
-   controls beside a 50px thumbnail don't fit a 375pt screen, and the inline
-   delete confirmation needs somewhere to appear. */
-.rate-card {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 11px;
-  padding: 12px;
-}
-
-.rate-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-.rate-actions {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-/* Votes take the room left over, so they're easy to hit one-handed. */
-.rate-actions .vote {
-  flex: 1 1 auto;
-  width: auto;
+@media (prefers-color-scheme: dark) {
+  .danger {
+    color: #2a0f08;
+  }
 }
 
 /* ---------------- item detail sheet ---------------- */
@@ -859,10 +1134,10 @@ button {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  background: rgba(16, 15, 14, 0.55);
+  background: rgba(24, 18, 10, 0.55);
   /* Safari needs the prefix for backdrop blur. */
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
   animation: sheet-fade 0.15s ease-out;
 }
 
@@ -873,7 +1148,7 @@ button {
   max-height: 92dvh;
   overflow-y: auto;
   background: var(--surface);
-  border-radius: 20px 20px 0 0;
+  border-radius: 24px 24px 0 0;
   box-shadow: var(--shadow-lift);
   padding-bottom: calc(18px + env(safe-area-inset-bottom));
   animation: sheet-rise 0.2s cubic-bezier(0.2, 0.8, 0.3, 1);
@@ -885,25 +1160,41 @@ button {
     align-items: center;
   }
   .sheet {
-    border-radius: 20px;
+    border-radius: 24px;
     max-height: 88dvh;
   }
 }
 
 @keyframes sheet-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes sheet-rise {
-  from { transform: translateY(14px); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(14px);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .sheet-overlay,
-  .sheet {
+  .sheet,
+  .toast {
     animation: none;
+  }
+  .primary,
+  .vote,
+  .row.tappable,
+  .tab,
+  .nav-icon {
+    transition: none;
   }
 }
 
@@ -919,7 +1210,7 @@ button {
   border: 0;
   border-radius: 50%;
   /* Sits on top of the photo, so it needs its own contrast. */
-  background: rgba(16, 15, 14, 0.55);
+  background: rgba(24, 18, 10, 0.55);
   color: #fff;
   font-size: 18px;
 }
@@ -931,7 +1222,7 @@ button {
   max-height: 46dvh;
   object-fit: contain;
   background: var(--surface-sunk);
-  border-radius: 20px 20px 0 0;
+  border-radius: 24px 24px 0 0;
 }
 
 .sheet-photo-empty {
@@ -942,18 +1233,18 @@ button {
 }
 
 .sheet-body {
-  padding: 18px;
+  padding: 20px;
 }
 
 .sheet-body h2 {
-  font-size: 21px;
+  font-size: 22px;
   line-height: 1.25;
 }
 
 .sheet-category {
   margin: 4px 0 0;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -968,8 +1259,9 @@ button {
 }
 
 .sheet-price {
-  font-size: 28px;
-  font-weight: 700;
+  font-family: var(--font-round);
+  font-size: 30px;
+  font-weight: 750;
   letter-spacing: -0.02em;
 }
 
@@ -1005,7 +1297,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 11px 13px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   font-size: 15px;
 }
@@ -1015,12 +1307,12 @@ button {
 }
 
 .sheet-stores li.best {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--sun-soft);
+  color: var(--sun);
 }
 
 .sheet-stores li.best strong {
-  color: var(--accent);
+  color: var(--sun);
 }
 
 .sheet-tally {
@@ -1040,41 +1332,9 @@ button {
   gap: 5px;
 }
 
-.sheet-tally .up { color: var(--up); }
-.sheet-tally .down { color: var(--down); }
-
-/* The tick is now a real button (the row opens the sheet), so reset button chrome. */
-.tick {
-  padding: 0;
-  background: none;
-  cursor: pointer;
+.sheet-tally .up {
+  color: var(--up);
 }
-
-/* Wraps the thumbnail on rate cards so the photo alone opens the sheet. */
-.thumb-button {
-  padding: 0;
-  border: 0;
-  background: none;
-  line-height: 0;
-  border-radius: var(--radius-sm);
-}
-
-/* Account menu grew past one button, so it stacks. */
-.account-menu {
-  flex-direction: column;
-  align-items: stretch;
-}
-
-.account-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-/* The export links are <a>, so give them the button's look. */
-.account-actions .ghost {
-  flex: 1 1 auto;
-  justify-content: center;
-  text-decoration: none;
+.sheet-tally .down {
+  color: var(--down);
 }

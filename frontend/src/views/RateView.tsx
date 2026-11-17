@@ -113,10 +113,9 @@ export default function RateView({
   }
 
   return (
-    <div className="stack">
-      <p className="hint">
-        {purchases.length} thing{purchases.length === 1 ? "" : "s"} to rate. Would you get it
-        again?
+    <div className="screen">
+      <p className="caption">
+        {purchases.length} thing{purchases.length === 1 ? "" : "s"} left to rate
       </p>
 
       {lastRated && (
@@ -134,11 +133,14 @@ export default function RateView({
 
       {[...groups.entries()].map(([heading, group]) => (
         <section key={heading}>
-          <h3 className="section-heading">
-            <Icon name="store" size="1em" />
-            {heading}
+          <h3 className="group-heading">
+            <span className="group-title">
+              <Icon name="store" size="1em" />
+              {heading}
+            </span>
+            <span className="group-count">{group.length}</span>
           </h3>
-          <div className="stack">
+          <div className="stack-lg">
             {group.map((p) => (
               <article className="rate-card" key={p.id}>
                 <div className="rate-top">
@@ -149,18 +151,16 @@ export default function RateView({
                     aria-label={`See ${p.item_name} larger`}
                   >
                     {photoUrl(p.photo) ? (
-                      <img className="thumb" src={photoUrl(p.photo)!} alt="" />
+                      <img className="thumb thumb-lg" src={photoUrl(p.photo)!} alt="" />
                     ) : (
-                      <div className="thumb thumb-empty">
-                        <Icon name="cart" />
+                      <div className="thumb thumb-lg thumb-empty">
+                        <Icon name="cart" size="1.3em" />
                       </div>
                     )}
                   </button>
                   <div className="row-body">
-                    <strong>{p.item_name}</strong>
-                    <span className="row-sub">
-                      {[p.price, p.store].filter(Boolean).join("\u00a0\u00b7 ")}
-                    </span>
+                    <strong className="wrap">{p.item_name}</strong>
+                    {p.price && <span className="rate-price">{p.price}</span>}
                   </div>
                 </div>
                 <div className="rate-actions">
@@ -171,6 +171,7 @@ export default function RateView({
                     aria-label={`Did not like ${p.item_name}`}
                   >
                     <Icon name="thumbDown" />
+                    Skip
                   </button>
                   <button
                     className="vote up"
@@ -178,6 +179,7 @@ export default function RateView({
                     aria-label={`Liked ${p.item_name}`}
                   >
                     <Icon name="thumbUp" />
+                    Buy again
                   </button>
                 </div>
               </article>
