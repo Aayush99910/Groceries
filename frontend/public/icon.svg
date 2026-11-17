@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Full-bleed square on purpose: iOS applies its own rounded-corner mask, and
+       transparent corners would turn black. The cart is the same drawing as the
+       in-app icon (components/Icon.tsx), scaled up. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2a9a70"/>
+      <stop offset="1" stop-color="#136548"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.22" r="0.75">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#glow)"/>
+  <g transform="translate(256 262) scale(15.2) translate(-11.75 -12.5)"
+     fill="none" stroke="#fffaf0" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2 3.5h2.6l2.5 11.4a2 2 0 0 0 1.95 1.57h8.3a2 2 0 0 0 1.95-1.54L21.5 7.6H6.1"/>
+    <circle cx="10" cy="20" r="1.5"/>
+    <circle cx="17.5" cy="20" r="1.5"/>
+  </g>
+</svg>

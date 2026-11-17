@@ -5,7 +5,26 @@
     <!-- Built for her phone first. maximum-scale is left alone on purpose so
          pinch-zoom still works; blocking it is an accessibility own-goal. -->
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#1b7f5f" />
+    <meta name="description" content="Log what you buy, rate it later, shop from what you liked." />
+
+    <!-- Browser chrome colour: matches the page background in each theme. -->
+    <meta name="theme-color" content="#f7f6f3" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#141517" media="(prefers-color-scheme: dark)" />
+
+    <!-- Home-screen install. iOS takes the name and icon at the moment you tap
+         "Add to Home Screen" and keeps them, so changes here only show up after
+         removing the old icon and adding it again.
+         status-bar-style stays "default" (not black-translucent): the header has
+         no safe-area-inset-top padding, so translucent would put white status
+         text over the cream page. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Groceries" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+
     <title>Groceries</title>
   </head>
   <body>
