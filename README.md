@@ -2,12 +2,12 @@
 
 A tiny web app so she doesn't have to think in the grocery store.
 
-Three tabs, one job each, plus a profile page:
+Three tabs, one job each, plus a profile page. Read together they're a sentence: look at what to buy, add what you bought, rate it.
 
 | Screen | When | What she does |
 | --- | --- | --- |
-| **Shop** — *What to buy* | before and during a trip | pick a store, see what she liked there and what it cost; tap **+** to add it to her trip in two taps |
-| **Trip** | in the aisle | say which store she's at (once), then add things as they go in the trolley; a basket shows the running total |
+| **Shop** — *What to buy* | before and during shopping | pick a store, see what she liked there and what it cost; tap **+** to add it to her basket in two taps |
+| **Add** — *Add what you bought* | in the aisle | say which store she's at (once), then add things as they go in the trolley; a basket shows the running total |
 | **Rate** | at home, after eating it | a row of cards you **swipe** through (the next one peeks in); **Skip it** or **Buy again** act on the card in front, each confirmed in an iOS-style pop-up; an **Undo** beside the last thing you rated. A line at the top says how it works |
 | **Profile** (tap the avatar) | any time | photo, name and email, stats about her shopping, where she shops, exports, change password, sign out. No tab bar here: Back is the only way out |
 
@@ -18,7 +18,8 @@ The date is filled in by the backend. Nothing else is asked of her.
 - **Shop is answering a question**, "I'm at Safeway, what do I usually get and what
   does it cost?", not showing a log. The store chips filter to what she bought there,
   at the price she paid there, and flag anything cheaper elsewhere.
-- **Trip** puts the store first because it's the one thing that doesn't change
+- **Add** (it was called Trip, and before that Log, which meant nothing to anyone) is a verb
+  because adding is what she does in the aisle. It puts the store first because it's the one thing that doesn't change
   mid-shop. A trip is whatever was bought at that store in the last 8 hours. It uses
   the clock, not the server's "today" label, which is in UTC and would flip to
   "yesterday" mid-afternoon on the US west coast.

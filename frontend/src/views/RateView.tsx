@@ -38,12 +38,12 @@ export default function RateView({
   onRated,
   onSignedOut,
   goShop,
-  goTrip,
+  goAdd,
 }: {
   onRated: () => void;
   onSignedOut: () => void;
   goShop: () => void;
-  goTrip: () => void;
+  goAdd: () => void;
 }) {
   const [queue, setQueue] = useState<Purchase[] | null>(null);
   // Newest last. `index` is where the card sat, so Undo puts it back in place.
@@ -193,7 +193,7 @@ export default function RateView({
             ? `You rated ${history.length} thing${history.length === 1 ? "" : "s"}${
                 liked > 0 ? `, and ${liked} made your list.` : "."
               }`
-            : "Nothing is waiting to be rated. Add things on the Trip tab and they'll show up here."}
+            : "Nothing is waiting to be rated. Add things on the Add tab and they'll show up here."}
         </p>
         <div className="empty-actions">
           {history.length > 0 ? (
@@ -202,9 +202,9 @@ export default function RateView({
               See what to buy
             </button>
           ) : (
-            <button type="button" className="primary inline" onClick={goTrip}>
-              <Icon name="cart" />
-              Start a trip
+            <button type="button" className="primary inline" onClick={goAdd}>
+              <Icon name="plus" />
+              Add something
             </button>
           )}
           {last && (

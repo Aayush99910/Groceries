@@ -15,7 +15,7 @@ import { ListEntry, NotSignedIn, ShoppingList, photoUrl, sameStore, shoppingList
  *
  *   - Pick a store (or "All") and see only what she has bought and liked there,
  *     at the price she paid there.
- *   - The + on a row logs it to her trip in two taps, price prefilled.
+ *   - The + on a row adds it to her basket in two taps, price prefilled.
  *   - Things waiting for a rating live on the Rate tab, so this screen doesn't
  *     carry its own confusing "not rated" bucket; a banner points the way.
  */
@@ -25,18 +25,18 @@ export default function ShopView({
   onStore,
   pending,
   goRate,
-  goTrip,
+  goAdd,
   onAdded,
   notify,
   onSignedOut,
 }: {
   refreshKey: number;
-  /** The store she's currently shopping at (shared with the Trip tab). */
+  /** The store she's currently shopping at (shared with the Add tab). */
   store: string;
   onStore: (store: string) => void;
   pending: number;
   goRate: () => void;
-  goTrip: () => void;
+  goAdd: () => void;
   onAdded: () => void;
   notify: (message: string) => void;
   onSignedOut: () => void;
@@ -47,7 +47,7 @@ export default function ShopView({
   const [filter, setFilter] = useState<string | null>(null);
   const [detail, setDetail] = useState<ListEntry | null>(null);
   const [quick, setQuick] = useState<ListEntry | null>(null);
-  // Items added to the trip this session, so the + turns into a tick.
+  // Items added to the basket this session, so the + turns into a tick.
   const [added, setAdded] = useState<Set<number>>(new Set());
   const [showSkipped, setShowSkipped] = useState(false);
 
@@ -129,12 +129,12 @@ export default function ShopView({
           </div>
           <h2>Your list builds itself</h2>
           <p>
-            Add what you buy on the Trip tab, rate it once you've tried it, and the things you
+            Add what you buy on the Add tab, rate it once you've tried it, and the things you
             liked show up here, with what you paid at each store.
           </p>
-          <button type="button" className="primary inline" onClick={goTrip}>
-            <Icon name="cart" />
-            Start a trip
+          <button type="button" className="primary inline" onClick={goAdd}>
+            <Icon name="plus" />
+            Add something
           </button>
         </div>
       ) : (
@@ -177,8 +177,8 @@ export default function ShopView({
             <>
               <p className="caption">
                 {activeFilter
-                  ? `${shown} you liked at ${activeFilter} \u00b7 tap + to add to your trip`
-                  : `${shown} you liked \u00b7 tap + to add to your trip`}
+                  ? `${shown} you liked at ${activeFilter} \u00b7 tap + to add to your basket`
+                  : `${shown} you liked \u00b7 tap + to add to your basket`}
               </p>
 
               {groups.map((group) => (
@@ -261,9 +261,9 @@ export default function ShopView({
           onSignedOut={onSignedOut}
           onAdded={(boughtAt) => {
             setAdded((current) => new Set(current).add(quick.item_id));
-            // The trip follows where she actually is.
+            // The basket follows where she actually is.
             onStore(boughtAt);
-            notify(`${quick.name} added to your ${boughtAt} trip`);
+            notify(`${quick.name} added to your basket at ${boughtAt}`);
             setQuick(null);
             onAdded();
           }}
@@ -331,7 +331,7 @@ function ItemRow({
         <button
           type="button"
           className={added ? "add-btn done" : "add-btn"}
-          aria-label={added ? `${entry.name} is in your trip` : `Add ${entry.name} to your trip`}
+          aria-label={added ? `${entry.name} is in your basket` : `Add ${entry.name} to your basket`}
           // The row opens the detail sheet; this must not bubble up to it.
           onClick={(e) => {
             e.stopPropagation();

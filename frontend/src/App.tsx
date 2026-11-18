@@ -5,18 +5,18 @@ import AuthView from "./views/AuthView";
 import ProfileView from "./views/ProfileView";
 import RateView from "./views/RateView";
 import ShopView from "./views/ShopView";
-import TripView from "./views/TripView";
+import AddView from "./views/AddView";
 import { User, logout, me, pendingRatings, photoUrl } from "./api";
 
-type Tab = "shop" | "trip" | "rate";
+type Tab = "shop" | "add" | "rate";
 
 const TABS: { key: Tab; label: string; icon: IconName }[] = [
   { key: "shop", label: "Shop", icon: "list" },
-  { key: "trip", label: "Trip", icon: "cart" },
+  { key: "add", label: "Add", icon: "plus" },
   { key: "rate", label: "Rate", icon: "thumbUp" },
 ];
 
-// The store she's at is shared by the Shop and Trip tabs, and survives a reload:
+// The store she's at is shared by the Shop and Add tabs, and survives a reload:
 // she is in one shop for the whole trip, not twelve.
 const STORE_KEY = "groceries.lastStore";
 
@@ -76,7 +76,7 @@ export default function App() {
 
   async function signOut() {
     await logout().catch(() => undefined);
-    // Whoever signs in next on this phone shouldn't inherit this trip.
+    // Whoever signs in next on this phone shouldn't inherit this store.
     try {
       localStorage.removeItem(STORE_KEY);
     } catch {
@@ -112,9 +112,7 @@ export default function App() {
 
   const heading: Record<Tab, { title: string; sub: string }> = {
     shop: { title: "What to buy", sub: "Things you liked, with what you paid" },
-    trip: store
-      ? { title: "Your trip", sub: "Add things as they go in the trolley" }
-      : { title: "Start a trip", sub: "Pick a store to begin" },
+    add: { title: "Add what you bought", sub: store ? "" : "Pick a store to begin" },
     rate: {
       title: "Rate your items",
       sub: pending > 0 ? "" : "Nothing waiting",
@@ -175,14 +173,14 @@ export default function App() {
                 onStore={setStore}
                 pending={pending}
                 goRate={() => go("rate")}
-                goTrip={() => go("trip")}
+                goAdd={() => go("add")}
                 onAdded={refresh}
                 notify={notify}
                 onSignedOut={onSignedOut}
               />
             )}
-            {tab === "trip" && (
-              <TripView
+            {tab === "add" && (
+              <AddView
                 store={store}
                 onStore={setStore}
                 refreshKey={refreshKey}
@@ -196,7 +194,7 @@ export default function App() {
                 onRated={refresh}
                 onSignedOut={onSignedOut}
                 goShop={() => go("shop")}
-                goTrip={() => go("trip")}
+                goAdd={() => go("add")}
               />
             )}
           </>

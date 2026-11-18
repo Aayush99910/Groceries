@@ -96,7 +96,7 @@ export default function QuickAddSheet({
         onClick={(e) => e.stopPropagation()}
         onSubmit={submit}
         role="dialog"
-        aria-label={`Add ${entry.name} to your trip`}
+        aria-label={`Add ${entry.name} to your basket`}
       >
         <div className="sheet-grab" aria-hidden />
         <div className="quick-head">
@@ -175,7 +175,7 @@ export default function QuickAddSheet({
           ) : (
             <>
               <Icon name="plus" />
-              {store.trim() ? `Add to ${store.trim()}` : "Add to my trip"}
+              {store.trim() ? `Add to ${store.trim()}` : "Add to my basket"}
             </>
           )}
         </button>

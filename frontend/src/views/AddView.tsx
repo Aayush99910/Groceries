@@ -35,7 +35,7 @@ const TRIP_WINDOW_MS = 8 * 60 * 60 * 1000;
  *   2. Add things as they go in the trolley. Each shows up in the basket below
  *      with a running total, so you can see the trip taking shape.
  */
-export default function TripView({
+export default function AddView({
   store,
   onStore,
   refreshKey,
