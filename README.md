@@ -9,7 +9,7 @@ Three tabs, one job each, plus a profile page:
 | **Shop** — *What to buy* | before and during a trip | pick a store, see what she liked there and what it cost; tap **+** to add it to her trip in two taps |
 | **Trip** | in the aisle | say which store she's at (once), then add things as they go in the trolley; a basket shows the running total |
 | **Rate** | at home, after eating it | one item at a time, big photo: **Skip it** or **Buy again**, with Back and "Ask me later" |
-| **Profile** (tap the avatar) | any time | name and email, stats about her shopping, where she shops, exports, change password, sign out |
+| **Profile** (tap the avatar) | any time | photo, name and email, stats about her shopping, where she shops, exports, change password, sign out. No tab bar here: Back is the only way out |
 
 The date is filled in by the backend. Nothing else is asked of her.
 
@@ -200,6 +200,8 @@ without one.
 | `POST` | `/api/auth/logout` | drops the session |
 | `GET` | `/api/auth/me` | current user, or `null` — never 401s |
 | `PATCH` | `/api/auth/me` | `{display_name}`, rename yourself |
+| `POST` | `/api/auth/avatar` | profile photo (multipart `photo`), centre-cropped square |
+| `DELETE` | `/api/auth/avatar` | remove it |
 | `POST` | `/api/auth/password` | `{current_password, new_password}`, signs out your other devices |
 | `POST` | `/api/purchases` | log one item (multipart: name, store, price, photo) |
 | `GET` | `/api/suggest/items?q=` | autocomplete item names |
@@ -351,3 +353,13 @@ and FastAPI won't be the limit. What will run out first is the free Postgres siz
 and photos are the bulk of it. When that happens, move them to object storage (R2 or
 B2) — the photo code in [`photos.py`](backend/app/photos.py) is the only place that
 changes.
+
+### Downloads on a phone
+
+The exports (PDF, CSV, ZIP) are fetched by the app and handed to the phone's **share
+sheet** (Save to Files, AirDrop, ...), not linked with `<a download>`. In an app added to
+the iPhone Home Screen iOS ignores `download`: a PDF would open in a viewer with no way
+back, and a ZIP would have nowhere to go. Where there's no share sheet (desktop), it's a
+normal download. If Safari refuses to open the sheet because the file took too long to
+build, the row switches to "Ready. Tap to save it" and a second tap opens it.
+

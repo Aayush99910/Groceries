@@ -126,6 +126,9 @@ def _public_user(user) -> dict:
         "email": user["email"],
         "display_name": user["display_name"],
         "created_at": user["created_at"],
+        # A photo id, served from /photos/{id} like any other (so it's private to
+        # her account). None until she adds one.
+        "avatar": user["avatar"],
     }
 
 
@@ -192,6 +195,47 @@ def update_me(
         (name or None, user["id"]),
     ).fetchone()
     db.commit()
+    return {"user": _public_user(row)}
+
+
+@app.post("/api/auth/avatar")
+async def set_avatar(
+    photo: UploadFile = File(...),
+    user=Depends(current_user),
+    db: psycopg.Connection = Depends(get_db),
+):
+    """Set or replace the profile picture."""
+    raw = await photo.read()
+    if not raw:
+        raise HTTPException(400, "That file was empty")
+    if len(raw) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, "That photo is too big")
+    try:
+        new_id = save_photo(db, user["id"], raw, square=True)
+    except Exception:
+        raise HTTPException(400, "Couldn't read that photo")
+
+    old_id = user["avatar"]
+    row = db.execute(
+        "UPDATE users SET avatar = %s WHERE id = %s RETURNING *", (new_id, user["id"])
+    ).fetchone()
+    db.commit()
+    # The old picture would otherwise sit in the table forever, unreferenced.
+    delete_photo(db, old_id)
+    return {"user": _public_user(row)}
+
+
+@app.delete("/api/auth/avatar")
+def remove_avatar(
+    user=Depends(current_user),
+    db: psycopg.Connection = Depends(get_db),
+):
+    old_id = user["avatar"]
+    row = db.execute(
+        "UPDATE users SET avatar = NULL WHERE id = %s RETURNING *", (user["id"],)
+    ).fetchone()
+    db.commit()
+    delete_photo(db, old_id)
     return {"user": _public_user(row)}
 
 

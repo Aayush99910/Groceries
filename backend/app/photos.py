@@ -36,12 +36,30 @@ def resize(raw: bytes) -> bytes:
     return out.getvalue()
 
 
-def save_photo(db: psycopg.Connection, user_id: int, raw: bytes) -> str:
-    """Resize and store. Returns the id, which is what item/purchase rows hold."""
+AVATAR_EDGE = 360  # shown at most ~90px wide; 4x covers retina with room to spare
+
+
+def resize_square(raw: bytes) -> bytes:
+    """Centre-crop to a square and shrink: what a profile picture wants."""
+    image = Image.open(io.BytesIO(raw))
+    image = ImageOps.exif_transpose(image)
+    if image.mode not in ("RGB", "L"):
+        image = image.convert("RGB")
+    image = ImageOps.fit(image, (AVATAR_EDGE, AVATAR_EDGE), method=Image.LANCZOS)
+
+    out = io.BytesIO()
+    image.save(out, "JPEG", quality=85, optimize=True)
+    return out.getvalue()
+
+
+def save_photo(db: psycopg.Connection, user_id: int, raw: bytes, square: bool = False) -> str:
+    """Resize and store. Returns the id, which is what item/purchase rows hold.
+
+    `square` crops to a centred square, for profile pictures."""
     photo_id = f"{uuid.uuid4().hex}.jpg"
     db.execute(
         "INSERT INTO photos (id, user_id, bytes, created_at) VALUES (%s, %s, %s, %s)",
-        (photo_id, user_id, resize(raw), utcnow_iso()),
+        (photo_id, user_id, resize_square(raw) if square else resize(raw), utcnow_iso()),
     )
     db.commit()
     return photo_id

@@ -15,6 +15,13 @@ CREATE TABLE IF NOT EXISTS users (
     created_at    TEXT NOT NULL
 );
 
+-- Profile picture: the id of a row in `photos` (below). Deliberately NOT a
+-- foreign key: photos already references users, so this would be a cycle, and
+-- the code that replaces or removes an avatar deletes the old photo itself.
+-- ADD COLUMN IF NOT EXISTS makes this safe to run on every startup, and is the
+-- migration for databases that already exist.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;
+
 -- Login sessions. In the database rather than in memory so a restart -- which on
 -- a free host happens whenever it feels like it -- doesn't sign everyone out.
 CREATE TABLE IF NOT EXISTS sessions (
