@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { useCachedState } from "../cache";
 import Icon from "../components/Icon";
 import ItemSheet from "../components/ItemSheet";
 import QuickAddSheet from "../components/QuickAddSheet";
@@ -41,7 +42,7 @@ export default function ShopView({
   notify: (message: string) => void;
   onSignedOut: () => void;
 }) {
-  const [data, setData] = useState<ShoppingList | null>(null);
+  const [data, setData] = useCachedState<ShoppingList | null>("shop", null);
   const [error, setError] = useState<string | null>(null);
   // null = "All stores".
   const [filter, setFilter] = useState<string | null>(null);

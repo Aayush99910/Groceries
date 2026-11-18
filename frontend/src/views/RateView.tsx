@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import { useCachedState } from "../cache";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Icon from "../components/Icon";
 import {
@@ -45,7 +46,7 @@ export default function RateView({
   goShop: () => void;
   goAdd: () => void;
 }) {
-  const [queue, setQueue] = useState<Purchase[] | null>(null);
+  const [queue, setQueue] = useCachedState<Purchase[] | null>("rate", null);
   // Newest last. `index` is where the card sat, so Undo puts it back in place.
   const [history, setHistory] = useState<{ purchase: Purchase; liked: boolean; index: number }[]>(
     []

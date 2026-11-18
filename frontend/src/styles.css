@@ -2473,3 +2473,43 @@ button {
   white-space: normal;
   overflow: hidden;
 }
+
+/* ---------------- moving between tabs ---------------- */
+
+/* The screen is keyed on the tab, so React replaces the node on every switch
+   and this animation replays. Short on purpose: long enough to show that
+   something moved, short enough that it never stands between her and the tap.
+   The real fix for sluggish tabs was removing the Loading flash (see cache.ts);
+   this is the polish on top of that, not a substitute for it. */
+.app > main {
+  animation: screen-in 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The tab you pressed should feel pressed. */
+.nav-item:active .nav-icon {
+  transform: scale(0.88);
+}
+
+.nav-item .nav-icon {
+  transition: transform 0.12s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app > main {
+    animation: none;
+  }
+  .nav-item .nav-icon {
+    transition: none;
+  }
+}

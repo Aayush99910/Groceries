@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useCachedState } from "../cache";
 import DeleteButton from "../components/DeleteButton";
 import Icon from "../components/Icon";
 import StoreSheet from "../components/StoreSheet";
@@ -63,7 +64,7 @@ export default function AddView({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [recent, setRecent] = useState<Purchase[] | null>(null);
+  const [recent, setRecent] = useCachedState<Purchase[] | null>("add-recent", null);
   const [favourites, setFavourites] = useState<ListEntry[]>([]);
   const nameRef = useRef<HTMLDivElement>(null);
 
