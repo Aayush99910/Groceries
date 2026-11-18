@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import ConfirmDialog from "../components/ConfirmDialog";
 import Icon from "../components/Icon";
@@ -17,14 +17,23 @@ type Asking =
   | { kind: "rate"; purchase: Purchase; liked: boolean }
   | { kind: "delete"; purchase: Purchase };
 
+// Matches the track's side padding in the stylesheet: the first card sits this far
+// in from the screen edge, and scroll positions are measured from there.
+const PAD = 20;
+
+// How long a card takes to fade out before it's removed from the row.
+const LEAVE_MS = 220;
+
 /**
- * "Did you like it?" -- one thing at a time.
+ * "Did you like it?" -- a row of cards you swipe through.
  *
- * One item is on screen, big enough to recognise from its photo. Choosing an
- * answer (or deleting) asks "are you sure?" in an iOS-style pop-up first, because
- * both are easy to hit by accident and the delete can't be taken back.
+ * Every unrated item is a card in one horizontal row, with the next card peeking in
+ * from the edge so it's obvious there's more. Swipe to look through them; the
+ * Skip it / Buy again buttons act on whichever card is in front. (Swiping only
+ * browses. It never rates anything, so a slip of the thumb can't record an answer.)
  *
- * The most recent rating is shown under the buttons with an Undo right beside it,
+ * Choosing an answer, or deleting, asks "are you sure?" in an iOS-style pop-up
+ * first. The most recent rating is shown under the buttons with an Undo beside it,
  * so it's obvious what Undo will do and which item it brings back.
  */
 export default function RateView({
@@ -39,11 +48,21 @@ export default function RateView({
   goTrip: () => void;
 }) {
   const [queue, setQueue] = useState<Purchase[] | null>(null);
-  // Newest last. Undo pops from the end.
-  const [history, setHistory] = useState<{ purchase: Purchase; liked: boolean }[]>([]);
+  // Newest last. `index` is where the card sat, so Undo puts it back in place.
+  const [history, setHistory] = useState<{ purchase: Purchase; liked: boolean; index: number }[]>(
+    []
+  );
   const [total, setTotal] = useState(0);
+  // Which card is centred, from the scroll position.
+  const [index, setIndex] = useState(0);
+  const [leaving, setLeaving] = useState<number | null>(null);
   const [asking, setAsking] = useState<Asking | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const trackRef = useRef<HTMLDivElement>(null);
+  const frame = useRef(0);
+  // Set when the row should scroll to a card once React has rendered it.
+  const pendingScroll = useRef<number | null>(null);
 
   useEffect(() => {
     pendingRatings()
@@ -57,10 +76,58 @@ export default function RateView({
       });
   }, []);
 
-  async function rate(purchase: Purchase, liked: boolean) {
-    // Optimistic: the next item appears immediately; a failure puts this back.
+  const cards = useCallback(
+    () => (trackRef.current ? (Array.from(trackRef.current.children) as HTMLElement[]) : []),
+    []
+  );
+
+  const scrollToIndex = useCallback(
+    (i: number, smooth = true) => {
+      const track = trackRef.current;
+      const card = cards()[i];
+      if (!track || !card) return;
+      track.scrollTo({ left: card.offsetLeft - PAD, behavior: smooth ? "smooth" : "auto" });
+    },
+    [cards]
+  );
+
+  // Work out which card is in front. Throttled to one check per frame.
+  function onScroll() {
+    cancelAnimationFrame(frame.current);
+    frame.current = requestAnimationFrame(() => {
+      const track = trackRef.current;
+      if (!track) return;
+      let best = 0;
+      let bestDistance = Infinity;
+      cards().forEach((card, i) => {
+        const distance = Math.abs(card.offsetLeft - PAD - track.scrollLeft);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = i;
+        }
+      });
+      setIndex(best);
+    });
+  }
+
+  // After the list changes: keep `index` valid, and honour a requested scroll.
+  useLayoutEffect(() => {
+    if (!queue) return;
+    if (pendingScroll.current !== null) {
+      scrollToIndex(pendingScroll.current);
+      setIndex(pendingScroll.current);
+      pendingScroll.current = null;
+    } else if (index > queue.length - 1) {
+      setIndex(Math.max(0, queue.length - 1));
+    }
+  }, [queue, index, scrollToIndex]);
+
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+
+  async function rate(purchase: Purchase, liked: boolean, at: number) {
+    // Optimistic: the card goes immediately; a failure puts it back where it was.
     setQueue((current) => (current ?? []).filter((p) => p.id !== purchase.id));
-    setHistory((h) => [...h, { purchase, liked }]);
+    setHistory((h) => [...h, { purchase, liked, index: at }]);
     setError(null);
     try {
       await ratePurchase(purchase.id, liked);
@@ -68,27 +135,31 @@ export default function RateView({
     } catch (err) {
       if (err instanceof NotSignedIn) return onSignedOut();
       setError(err instanceof Error ? err.message : "Couldn't save that");
-      setQueue((current) => [purchase, ...(current ?? [])]);
+      restore(purchase, at);
       setHistory((h) => h.filter((entry) => entry.purchase.id !== purchase.id));
     }
+  }
+
+  function restore(purchase: Purchase, at: number) {
+    pendingScroll.current = at;
+    setQueue((current) => {
+      const next = [...(current ?? [])];
+      next.splice(Math.min(at, next.length), 0, purchase);
+      return next;
+    });
   }
 
   async function undo() {
     const last = history[history.length - 1];
     if (!last) return;
     setHistory((h) => h.slice(0, -1));
-    setQueue((current) => [last.purchase, ...(current ?? [])]);
     setError(null);
+    restore(last.purchase, last.index);
     await unratePurchase(last.purchase.id).catch(() => undefined);
     onRated();
   }
 
-  function later(purchase: Purchase) {
-    // Not ready to judge it yet: send it to the back of the line.
-    setQueue((current) => [...(current ?? []).filter((p) => p.id !== purchase.id), purchase]);
-  }
-
-  async function remove(purchase: Purchase) {
+  async function remove(purchase: Purchase, at: number) {
     setQueue((current) => (current ?? []).filter((p) => p.id !== purchase.id));
     setTotal((n) => Math.max(0, n - 1));
     setError(null);
@@ -98,9 +169,18 @@ export default function RateView({
     } catch (err) {
       if (err instanceof NotSignedIn) return onSignedOut();
       setError(err instanceof Error ? err.message : "Couldn't delete that");
-      setQueue((current) => [purchase, ...(current ?? [])]);
+      restore(purchase, at);
       setTotal((n) => n + 1);
     }
+  }
+
+  /** Fade the card out first, so it doesn't just blink away. */
+  function leaveThen(purchase: Purchase, action: () => void) {
+    setLeaving(purchase.id);
+    setTimeout(() => {
+      setLeaving(null);
+      action();
+    }, LEAVE_MS);
   }
 
   if (error && !queue) {
@@ -155,38 +235,111 @@ export default function RateView({
     );
   }
 
-  // ---------------------------------------------------------------- one item
+  // ---------------------------------------------------------------- the row
 
-  const current = queue[0];
+  const at = Math.min(index, queue.length - 1);
+  const current = queue[at];
   const done = total - queue.length;
-  const src = photoUrl(current.photo);
-  const details = [current.price, current.store, current.when].filter(Boolean).join(" · ");
 
   return (
     <div className="screen rate-screen">
+      {/* Says what to do, in words. This used to be left for people to work out. */}
+      <div className="how-to">
+        <span className="how-to-icon" aria-hidden>
+          <Icon name="chevronLeft" size="0.9em" />
+          <Icon name="chevronRight" size="0.9em" />
+        </span>
+        {queue.length > 1 ? (
+          <p>
+            <strong>Swipe</strong> to browse.{" "}
+            <span className="how-to-more">
+              Tap <strong>Buy again</strong> if you'd get it again, or <strong>Skip it</strong> if
+              not.
+            </span>
+          </p>
+        ) : (
+          <p>
+            Last one. Tap <strong>Buy again</strong> if you'd get it again, or{" "}
+            <strong>Skip it</strong> if not.
+          </p>
+        )}
+      </div>
+
       <div className="progress" aria-label={`${done} of ${total} rated`}>
         <div className="progress-bar">
           <div className="progress-fill" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
         </div>
-        <span className="progress-text">
-          {done + 1} of {total}
-        </span>
+        <span className="progress-text">{queue.length} left</span>
       </div>
 
-      {/* Keyed on the purchase so each new item animates in. */}
-      <article className="rate-stage" key={current.id}>
-        {src ? (
-          <img className="rate-photo" src={src} alt={current.item_name} />
+      <div
+        className="carousel"
+        ref={trackRef}
+        onScroll={onScroll}
+        role="group"
+        aria-roledescription="carousel"
+        aria-label="Items to rate"
+      >
+        {queue.map((purchase, i) => {
+          const src = photoUrl(purchase.photo);
+          const details = [purchase.price, purchase.store, purchase.when]
+            .filter(Boolean)
+            .join(" · ");
+          return (
+            <article
+              key={purchase.id}
+              className={leaving === purchase.id ? "slide leaving" : "slide"}
+              aria-roledescription="slide"
+              aria-label={`${i + 1} of ${queue.length}`}
+            >
+              {src ? (
+                <img className="rate-photo" src={src} alt={purchase.item_name} draggable={false} />
+              ) : (
+                <div className="rate-photo rate-photo-empty">
+                  <Icon name="cart" size="2.4em" />
+                </div>
+              )}
+              <div className="rate-info">
+                <h2>{purchase.item_name}</h2>
+                <p>{details}</p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {/* Where you are in the row, with buttons for anyone who can't swipe. */}
+      <div className="pager">
+        <button
+          type="button"
+          className="pager-btn"
+          onClick={() => scrollToIndex(at - 1)}
+          disabled={at === 0}
+          aria-label="Previous item"
+        >
+          <Icon name="chevronLeft" />
+        </button>
+        {queue.length <= 8 ? (
+          <span className="dots" aria-hidden>
+            {queue.map((p, i) => (
+              <span key={p.id} className={i === at ? "dot on" : "dot"} />
+            ))}
+          </span>
         ) : (
-          <div className="rate-photo rate-photo-empty">
-            <Icon name="cart" size="2.4em" />
-          </div>
+          <span className="pager-text">
+            {at + 1} of {queue.length}
+          </span>
         )}
-        <div className="rate-info">
-          <h2>{current.item_name}</h2>
-          <p>{details}</p>
-        </div>
-      </article>
+        <button
+          type="button"
+          className="pager-btn"
+          onClick={() => scrollToIndex(at + 1)}
+          disabled={at >= queue.length - 1}
+          aria-label="Next item"
+        >
+          <Icon name="chevronRight" />
+        </button>
+      </div>
 
       {error && (
         <p className="error">
@@ -217,19 +370,13 @@ export default function RateView({
       </div>
 
       <div className="rate-more">
-        {queue.length > 1 && (
-          <button type="button" className="text-btn" onClick={() => later(current)}>
-            <Icon name="clock" size="1em" />
-            Ask me later
-          </button>
-        )}
         <button
           type="button"
           className="text-btn danger-text"
           onClick={() => setAsking({ kind: "delete", purchase: current })}
         >
           <Icon name="trash" size="1em" />
-          Delete
+          Delete this one
         </button>
       </div>
 
@@ -253,7 +400,11 @@ export default function RateView({
 
       {asking?.kind === "rate" && (
         <ConfirmDialog
-          title={asking.liked ? `Buy ${asking.purchase.item_name} again?` : `Skip ${asking.purchase.item_name}?`}
+          title={
+            asking.liked
+              ? `Buy ${asking.purchase.item_name} again?`
+              : `Skip ${asking.purchase.item_name}?`
+          }
           message={
             asking.liked
               ? "It goes on your Shop list, with what you paid for it."
@@ -268,7 +419,7 @@ export default function RateView({
               onPress: () => {
                 const { purchase, liked } = asking;
                 setAsking(null);
-                rate(purchase, liked);
+                leaveThen(purchase, () => rate(purchase, liked, at));
               },
             },
           ]}
@@ -288,7 +439,7 @@ export default function RateView({
               onPress: () => {
                 const { purchase } = asking;
                 setAsking(null);
-                remove(purchase);
+                leaveThen(purchase, () => remove(purchase, at));
               },
             },
           ]}

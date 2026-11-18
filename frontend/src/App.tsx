@@ -117,7 +117,7 @@ export default function App() {
       : { title: "Start a trip", sub: "Pick a store to begin" },
     rate: {
       title: "Rate your items",
-      sub: pending > 0 ? "Would you get each one again?" : "Nothing waiting",
+      sub: pending > 0 ? "" : "Nothing waiting",
     },
   };
 
@@ -137,7 +137,7 @@ export default function App() {
           <div className="header-row">
             <div>
               <h1>{heading[tab].title}</h1>
-              <p className="page-sub">{heading[tab].sub}</p>
+              {heading[tab].sub && <p className="page-sub">{heading[tab].sub}</p>}
             </div>
             <button
               type="button"

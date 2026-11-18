@@ -758,7 +758,7 @@ button {
 /* ---------------- rate: one item at a time ---------------- */
 
 .rate-screen {
-  gap: 16px;
+  gap: 11px;
 }
 
 .progress {
@@ -791,23 +791,129 @@ button {
   color: var(--muted);
 }
 
-/* Each new item slides in, so it's obvious the screen moved on. */
-.rate-stage {
+/* The instructions, in words, at the top. */
+.how-to {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--text-soft);
+}
+
+.how-to p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.how-to strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.how-to-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--accent);
+}
+
+/* The row of cards. Swipe sideways; each card snaps into place, and the next one
+   peeks in from the edge so it's clear there's more. It bleeds to the screen
+   edges so the peeking card isn't clipped by the page margin. */
+.carousel {
+  position: relative;
+  display: flex;
+  gap: 12px;
+  margin: 0 -20px;
+  padding: 0 20px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 20px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.carousel::-webkit-scrollbar {
+  display: none;
+}
+
+.slide {
+  flex: 0 0 calc(100% - 28px);
   display: flex;
   flex-direction: column;
   gap: 14px;
-  animation: stage-in 0.24s cubic-bezier(0.2, 0.8, 0.3, 1);
+  min-width: 0;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
-@keyframes stage-in {
-  from {
-    opacity: 0;
-    transform: translateX(18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+/* Fades out just before it's removed, so it doesn't blink away. */
+.slide.leaving {
+  opacity: 0;
+  transform: scale(0.94);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.pager-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-sunk);
+  color: var(--text-soft);
+  font-size: 17px;
+}
+
+.pager-btn:disabled {
+  opacity: 0.3;
+}
+
+.dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 60px;
+  justify-content: center;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.dot.on {
+  background: var(--accent);
+  transform: scale(1.35);
+}
+
+.pager-text {
+  min-width: 60px;
+  text-align: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
 
 /* Big enough to recognise the thing, short enough that the answers stay on
@@ -816,8 +922,8 @@ button {
   display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
-  max-height: 36dvh;
-  min-height: 190px;
+  max-height: 31dvh;
+  min-height: 170px;
   object-fit: cover;
   border-radius: 26px;
   background: var(--surface-sunk);
@@ -827,15 +933,36 @@ button {
 /* Short phones (SE-sized): a smaller photo, so Undo isn't pushed under the tab bar. */
 @media (max-height: 740px) {
   .rate-photo {
-    max-height: 27dvh;
-    min-height: 140px;
+    max-height: 22dvh;
+    min-height: 120px;
+  }
+  /* The buttons say what they do, so the second sentence of the hint can go. */
+  .how-to-more {
+    display: none;
+  }
+  .how-to {
+    padding-block: 8px;
+  }
+  .rate-screen {
+    gap: 8px;
+  }
+  .pager-btn {
+    width: 30px;
+    height: 30px;
+  }
+  .last-action {
+    padding-block: 4px;
   }
 }
 
 @media (max-height: 660px) {
   .rate-photo {
-    max-height: 22dvh;
-    min-height: 120px;
+    max-height: 18dvh;
+    min-height: 100px;
+  }
+  /* "N left" is already in the pager and the badge on the tab. */
+  .progress {
+    display: none;
   }
 }
 
@@ -1935,8 +2062,12 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rate-stage {
-    animation: none;
+  .slide,
+  .dot {
+    transition: none;
+  }
+  .carousel {
+    scroll-behavior: auto;
   }
   .progress-fill,
   .chip,

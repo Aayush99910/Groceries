@@ -8,7 +8,7 @@ Three tabs, one job each, plus a profile page:
 | --- | --- | --- |
 | **Shop** — *What to buy* | before and during a trip | pick a store, see what she liked there and what it cost; tap **+** to add it to her trip in two taps |
 | **Trip** | in the aisle | say which store she's at (once), then add things as they go in the trolley; a basket shows the running total |
-| **Rate** | at home, after eating it | one item at a time with a big photo: **Skip it** or **Buy again**, each confirmed in an iOS-style pop-up; **Ask me later**, **Delete** (also confirmed), and an **Undo** beside the last thing you rated |
+| **Rate** | at home, after eating it | a row of cards you **swipe** through (the next one peeks in); **Skip it** or **Buy again** act on the card in front, each confirmed in an iOS-style pop-up; **Delete this one** (also confirmed); an **Undo** beside the last thing you rated. A line at the top says how it works |
 | **Profile** (tap the avatar) | any time | photo, name and email, stats about her shopping, where she shops, exports, change password, sign out. No tab bar here: Back is the only way out |
 
 The date is filled in by the backend. Nothing else is asked of her.
@@ -22,11 +22,13 @@ The date is filled in by the backend. Nothing else is asked of her.
   mid-shop. A trip is whatever was bought at that store in the last 8 hours. It uses
   the clock, not the server's "today" label, which is in UTC and would flip to
   "yesterday" mid-afternoon on the US west coast.
-- **Rate** is one item at a time because it's a yes/no question: scrolling a list to
-  find the right row's buttons was the hard part. Rating and deleting both ask first in a
-  pop-up (`ConfirmDialog`, laid out like an iOS alert), because both are easy to hit by
-  accident and a delete can't be taken back. Undo sits next to the rating it reverses, so
-  it's obvious what it does.
+- **Rate** is a row of cards you swipe through. It's a yes/no question, and a long list
+  made you hunt for the right row's buttons. Swiping only *browses*: it never records an
+  answer, so a slip of the thumb can't rate something. That's also why there's no "ask me
+  later": swiping past an item does the job. Rating and deleting ask first in a pop-up
+  (`ConfirmDialog`, laid out like an iOS alert), because both are easy to hit by accident
+  and a delete can't be taken back. Undo sits next to the rating it reverses and puts the
+  card back in the same place in the row.
 - Things waiting for a rating are never a bucket on the Shop screen. A banner points
   to the Rate tab instead, so there's one place to do it.
 
