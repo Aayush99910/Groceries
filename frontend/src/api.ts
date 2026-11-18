@@ -220,26 +220,12 @@ export async function listHauls() {
 // ---------------------------------------------------------------- finding a store
 
 /** A shop from the map search. `label` is what gets saved as the store's name. */
-export type Place = {
-  id: number | null;
-  name: string;
-  /** "Trader Joe's \u00b7 39324 Argonaut Way": the name plus what tells branches apart. */
-  label: string;
-  address: string;
-  distance_m: number | null;
-};
+// Store lookup moved into the page: Nominatim refuses cloud-datacenter IPs, so
+// the request has to come from the phone. See places.ts for the full reasoning.
+// Re-exported here so existing imports from "../api" keep working.
+export type { Place, Coords } from "./places";
+export { nearbyStores, searchStores, PlacesUnavailable } from "./places";
 
-export type Coords = { lat: number; lon: number };
-
-// POST, not GET: the coordinates and what she typed stay out of URLs, so they stay
-// out of access logs.
-export async function nearbyStores(at: Coords) {
-  return json<{ places: Place[] }>(await postJson("/api/places/nearby", at));
-}
-
-export async function searchStores(q: string, at?: Coords | null) {
-  return json<{ places: Place[] }>(await postJson("/api/places/search", { q, ...(at ?? {}) }));
-}
 
 const MILES_REGIONS = new Set(["US", "GB", "LR", "MM"]);
 

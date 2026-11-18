@@ -494,14 +494,14 @@ button {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 16px;
+  padding: 13px 16px;
   border: 0;
   border-radius: var(--radius);
   background: var(--accent);
   color: #fff;
   font-family: var(--font-round);
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 650;
   box-shadow: 0 2px 0 color-mix(in srgb, var(--accent) 70%, black);
   transition: transform 0.08s ease;
 }
@@ -997,16 +997,17 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 50px;
-  padding: 0 12px;
+  gap: 7px;
+  /* 44px is Apple's minimum comfortable touch target; smaller than this starts
+     costing mis-taps, so it's the floor rather than a style choice. */
+  min-height: 44px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 14px;
+  border-radius: 12px;
   font-family: var(--font-round);
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 650;
   white-space: nowrap;
-  font-size: 16px;
   transition: transform 0.08s ease;
 }
 
