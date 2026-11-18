@@ -28,12 +28,13 @@ from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import auth
 from .db import get_db, init_db, parse_iso, utcnow_iso
 from .pdf_export import build_pdf
 from .photos import delete_photo, load_photo, save_photo
+from .places import PlacesUnavailable, find_nearby, search_places
 from .seed import CATEGORY_LABELS, CATEGORY_ORDER, COMMON_ITEMS, guess_category
 from .text import format_price, key_for, normalize, parse_price_cents, rank_matches
 
@@ -468,6 +469,40 @@ def suggest_items(
     theirs = rank_matches(q, fallback, limit=6)
     combined = mine + [n for n in theirs if n not in mine]
     return {"suggestions": combined[:8], "known": [n in known for n in combined[:8]]}
+
+
+class NearbyQuery(BaseModel):
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+
+
+class PlaceSearch(BaseModel):
+    q: str = Field(..., min_length=2, max_length=80)
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
+
+
+# These are POST on purpose, though they only read. A GET puts the coordinates (and
+# what she typed) in the URL, and URLs get written to access logs, here and at every
+# layer in front of us. A body doesn't.
+@app.post("/api/places/nearby")
+def places_nearby(body: NearbyQuery, user=Depends(current_user)):
+    """Grocery stores near a point, nearest first. Sign-in required, so this isn't an
+    open proxy to the lookup service. Coordinates are never stored or logged."""
+    try:
+        return {"places": find_nearby(body.lat, body.lon)}
+    except PlacesUnavailable:
+        # 502, not 401: the frontend reads 401 as "your session is gone".
+        raise HTTPException(502, "Store lookup isn't available right now")
+
+
+@app.post("/api/places/search")
+def places_search(body: PlaceSearch, user=Depends(current_user)):
+    """Shops matching a name, nearest first when lat/lon are given."""
+    try:
+        return {"places": search_places(body.q.strip(), body.lat, body.lon)}
+    except PlacesUnavailable:
+        raise HTTPException(502, "Store lookup isn't available right now")
 
 
 @app.get("/api/suggest/stores")

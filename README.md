@@ -7,7 +7,7 @@ Three tabs, one job each, plus a profile page. Read together they're a sentence:
 | Screen | When | What she does |
 | --- | --- | --- |
 | **Shop** — *What to buy* | before and during shopping | pick a store, see what she liked there and what it cost; tap **+** to add it to her basket in two taps |
-| **Add** — *Add what you bought* | in the aisle | say which store she's at (once), then add things as they go in the trolley; a basket shows the running total |
+| **Add** — *Add what you bought* | in the aisle | pick the store in a pop-up (near you, by name, or a recent one), then add things as they go in the trolley; a basket shows the running total |
 | **Rate** | at home, after eating it | a row of cards you **swipe** through (the next one peeks in); **Skip it** or **Buy again** act on the card in front, each confirmed in an iOS-style pop-up; an **Undo** beside the last thing you rated. A line at the top says how it works |
 | **Profile** (tap the avatar) | any time | photo, name and email, stats about her shopping, where she shops, exports, change password, sign out. No tab bar here: Back is the only way out |
 
@@ -41,6 +41,7 @@ The date is filled in by the backend. Nothing else is asked of her.
 - **React + Vite + TypeScript** — the frontend
 - **Inline SVG icons** — hand-drawn in `components/Icon.tsx`; no icon library, no font
 - **Pillow** — shrinks phone photos, which are then stored in Postgres
+- **OpenStreetMap Nominatim** — finds stores by location or name (free, no key; see [Finding a store](#finding-a-store))
 - **`hashlib.scrypt`** — password hashing, from the standard library
 - **Docker + Render** (API), **Netlify** (frontend) — see [Deployment](#deployment)
 
@@ -213,6 +214,8 @@ without one.
 | `POST` | `/api/purchases` | log one item (multipart: name, store, price, photo) |
 | `GET` | `/api/suggest/items?q=` | autocomplete item names |
 | `GET` | `/api/suggest/stores?q=` | autocomplete store names |
+| `POST` | `/api/places/nearby` | `{lat, lon}`, grocery stores around a point, nearest first |
+| `POST` | `/api/places/search` | `{q, lat?, lon?}`, shops by name, nearest first when a location is given |
 | `GET` | `/api/purchases/recent?limit=` | last few logged, for the delete list |
 | `GET` | `/api/rate/pending` | everything awaiting a thumbs up or down |
 | `POST` | `/api/purchases/{id}/rate` | `{"liked": true}` |
@@ -339,6 +342,31 @@ and serves everything from one uvicorn process wrapped in `caffeinate`, and
 starts it at login. Note that it uses whatever `DATABASE_URL` is in `backend/.env`,
 so unless you point that elsewhere you're talking to the **live** database. A Mac
 sleeps when you close the lid, which is why this is the fallback and not the plan.
+
+## Finding a store
+
+The Add tab asks which store she's at in a pop-up, three ways: **Use my location** (stores
+around her, nearest first, with distance), **search by name**, or a **recent** store. A store
+the map doesn't know can be used exactly as typed, so it's never a dead end.
+
+- **Branches are told apart.** A store picked from the map is saved with its street, e.g.
+  `Trader Joe's · 39324 Argonaut Way`, so two Trader Joe's are two stores, with their own
+  prices, history and trips. (The matching ignores punctuation, so these stay separate.)
+- **No stale default.** The chosen store is remembered for **8 hours**, restarting each time
+  she adds something, then forgotten. It used to be kept forever, so the app said "Trader
+  Joe's" the next day while she was in Safeway.
+- **Where the data comes from.** [`places.py`](backend/app/places.py) calls OpenStreetMap's
+  free Nominatim service from the server: it asks callers to identify themselves with a
+  User-Agent (browsers can't set one), to make at most one request a second (enforced here,
+  across all users), and to cache. Answers are cached for 15 minutes. The Overpass API was
+  the other candidate for "nearby", but its public servers timed out when tried, so nearby is
+  Nominatim too.
+- **Privacy.** Her coordinates only build the search box. They aren't stored or logged: the
+  two routes are `POST` with a JSON body, because a `GET` would put them in the URL, and URLs
+  are written to access logs at every layer. (This was a real bug in the first version, caught
+  by checking the log.) Nominatim does receive the coordinates.
+- **Data quality.** It's volunteer-maintained map data: most chains have street addresses,
+  small shops sometimes don't, and a few are missing. Hence "use it as typed".
 
 ## Housekeeping
 
