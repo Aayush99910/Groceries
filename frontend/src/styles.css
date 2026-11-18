@@ -922,9 +922,11 @@ button {
   display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
-  max-height: 31dvh;
+  max-height: 40dvh;
   min-height: 170px;
-  object-fit: cover;
+  /* contain, not cover: show the whole photo. Cover cropped a tall phone photo to a
+     wide strip, which is why everything looked zoomed in. */
+  object-fit: contain;
   border-radius: 26px;
   background: var(--surface-sunk);
   box-shadow: var(--shadow);
@@ -933,7 +935,7 @@ button {
 /* Short phones (SE-sized): a smaller photo, so Undo isn't pushed under the tab bar. */
 @media (max-height: 740px) {
   .rate-photo {
-    max-height: 22dvh;
+    max-height: 28dvh;
     min-height: 120px;
   }
   /* The buttons say what they do, so the second sentence of the hint can go. */
@@ -957,7 +959,7 @@ button {
 
 @media (max-height: 660px) {
   .rate-photo {
-    max-height: 18dvh;
+    max-height: 24dvh;
     min-height: 100px;
   }
   /* "N left" is already in the pager and the badge on the tab. */
@@ -1022,13 +1024,6 @@ button {
   color: var(--down);
 }
 
-.rate-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
 .text-btn {
   display: inline-flex;
   align-items: center;
@@ -1040,10 +1035,6 @@ button {
   color: var(--text-soft);
   font-size: 14.5px;
   font-weight: 650;
-}
-
-.text-btn.danger-text {
-  color: var(--down);
 }
 
 .text-btn:disabled {

@@ -5,17 +5,14 @@ import Icon from "../components/Icon";
 import {
   NotSignedIn,
   Purchase,
-  deletePurchase,
   pendingRatings,
   photoUrl,
   ratePurchase,
   unratePurchase,
 } from "../api";
 
-/** What the pop-up is currently asking about, if anything. */
-type Asking =
-  | { kind: "rate"; purchase: Purchase; liked: boolean }
-  | { kind: "delete"; purchase: Purchase };
+/** What the pop-up is asking about: rating this card one way or the other. */
+type Asking = { purchase: Purchase; liked: boolean };
 
 // Matches the track's side padding in the stylesheet: the first card sits this far
 // in from the screen edge, and scroll positions are measured from there.
@@ -32,8 +29,9 @@ const LEAVE_MS = 220;
  * Skip it / Buy again buttons act on whichever card is in front. (Swiping only
  * browses. It never rates anything, so a slip of the thumb can't record an answer.)
  *
- * Choosing an answer, or deleting, asks "are you sure?" in an iOS-style pop-up
- * first. The most recent rating is shown under the buttons with an Undo beside it,
+ * Choosing an answer asks "are you sure?" in an iOS-style pop-up first. (There is
+ * deliberately no delete here: this screen is only about whether you liked
+ * something.) The most recent rating is shown under the buttons with an Undo beside it,
  * so it's obvious what Undo will do and which item it brings back.
  */
 export default function RateView({
@@ -157,21 +155,6 @@ export default function RateView({
     restore(last.purchase, last.index);
     await unratePurchase(last.purchase.id).catch(() => undefined);
     onRated();
-  }
-
-  async function remove(purchase: Purchase, at: number) {
-    setQueue((current) => (current ?? []).filter((p) => p.id !== purchase.id));
-    setTotal((n) => Math.max(0, n - 1));
-    setError(null);
-    try {
-      await deletePurchase(purchase.id);
-      onRated();
-    } catch (err) {
-      if (err instanceof NotSignedIn) return onSignedOut();
-      setError(err instanceof Error ? err.message : "Couldn't delete that");
-      restore(purchase, at);
-      setTotal((n) => n + 1);
-    }
   }
 
   /** Fade the card out first, so it doesn't just blink away. */
@@ -352,7 +335,7 @@ export default function RateView({
         <button
           type="button"
           className="vote down"
-          onClick={() => setAsking({ kind: "rate", purchase: current, liked: false })}
+          onClick={() => setAsking({ purchase: current, liked: false })}
           aria-label={`Skip ${current.item_name}`}
         >
           <Icon name="thumbDown" />
@@ -361,22 +344,11 @@ export default function RateView({
         <button
           type="button"
           className="vote up"
-          onClick={() => setAsking({ kind: "rate", purchase: current, liked: true })}
+          onClick={() => setAsking({ purchase: current, liked: true })}
           aria-label={`Buy ${current.item_name} again`}
         >
           <Icon name="thumbUp" />
           Buy again
-        </button>
-      </div>
-
-      <div className="rate-more">
-        <button
-          type="button"
-          className="text-btn danger-text"
-          onClick={() => setAsking({ kind: "delete", purchase: current })}
-        >
-          <Icon name="trash" size="1em" />
-          Delete this one
         </button>
       </div>
 
@@ -398,7 +370,7 @@ export default function RateView({
         </div>
       )}
 
-      {asking?.kind === "rate" && (
+      {asking && (
         <ConfirmDialog
           title={
             asking.liked
@@ -420,26 +392,6 @@ export default function RateView({
                 const { purchase, liked } = asking;
                 setAsking(null);
                 leaveThen(purchase, () => rate(purchase, liked, at));
-              },
-            },
-          ]}
-        />
-      )}
-
-      {asking?.kind === "delete" && (
-        <ConfirmDialog
-          title={`Delete ${asking.purchase.item_name}?`}
-          message="This removes it from your history, along with its price. It can't be undone."
-          onCancel={() => setAsking(null)}
-          actions={[
-            { label: "Cancel", onPress: () => setAsking(null) },
-            {
-              label: "Delete",
-              tone: "destructive",
-              onPress: () => {
-                const { purchase } = asking;
-                setAsking(null);
-                leaveThen(purchase, () => remove(purchase, at));
               },
             },
           ]}
