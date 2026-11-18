@@ -250,6 +250,8 @@ h2 {
   width: 42px;
   height: 42px;
   margin-top: 2px;
+  padding: 0;
+  overflow: hidden;
   border: 0;
   border-radius: 50%;
   background: var(--accent-soft);
@@ -1679,17 +1681,63 @@ button {
 }
 
 .avatar-lg {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 84px;
-  height: 84px;
+  width: 96px;
+  height: 96px;
   border-radius: 50%;
   background: linear-gradient(145deg, #2a9a70, #136548);
   color: #fffaf0;
   font-family: var(--font-round);
-  font-size: 36px;
+  font-size: 40px;
   font-weight: 750;
   box-shadow: 0 6px 16px color-mix(in srgb, #136548 30%, transparent);
+}
+
+/* A picture fills the circle; the badge sits outside the crop. */
+.avatar img,
+.avatar-lg img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.avatar-edit {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.avatar-edit input {
+  display: none;
+}
+
+.avatar-edit.busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.avatar-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 15px;
+  box-shadow: var(--shadow);
+}
+
+@media (prefers-color-scheme: dark) {
+  .avatar-badge {
+    color: #0d241a;
+  }
 }
 
 .profile-id h2 {
@@ -1836,5 +1884,68 @@ button {
   .disclosure-chevron,
   .vote {
     transition: none;
+  }
+}
+
+.button-row.center {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* No tab bar on the profile page, so the page itself clears the home indicator,
+   and the toast drops to the bottom edge. */
+.app > main.no-nav {
+  padding-bottom: calc(32px + env(safe-area-inset-bottom));
+}
+
+.toast.no-nav {
+  bottom: calc(env(safe-area-inset-bottom) + 20px);
+}
+
+/* Export rows: a quiet "Save" on the right, a spinner while it's being built. */
+.row.setting:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.row-action {
+  flex: none;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.row-action.strong {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+}
+
+@media (prefers-color-scheme: dark) {
+  .row-action.strong {
+    color: #0d241a;
+  }
+}
+
+.spinner {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border: 2.5px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2.4s;
   }
 }

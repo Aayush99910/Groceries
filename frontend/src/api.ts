@@ -5,6 +5,8 @@ export type User = {
   email: string;
   display_name: string | null;
   created_at?: string;
+  /** A photo id (see photoUrl), or null if she hasn't added a picture. */
+  avatar?: string | null;
 };
 
 export type Purchase = {
@@ -120,6 +122,20 @@ export async function updateProfile(displayName: string) {
   );
 }
 
+export async function uploadAvatar(file: File) {
+  const body = new FormData();
+  body.append("photo", file);
+  return json<{ user: User }>(
+    await fetch("/api/auth/avatar", { ...withCookies, method: "POST", body })
+  );
+}
+
+export async function removeAvatar() {
+  return json<{ user: User }>(
+    await fetch("/api/auth/avatar", { ...withCookies, method: "DELETE" })
+  );
+}
+
 export async function changePassword(currentPassword: string, newPassword: string) {
   return json<{ ok: boolean }>(
     await postJson("/api/auth/password", {
@@ -199,6 +215,69 @@ export async function shoppingList() {
 
 export async function listHauls() {
   return json<{ hauls: Haul[] }>(await fetch("/api/hauls", withCookies));
+}
+
+// ---------------------------------------------------------------- exports
+
+export type ExportKind = "pdf" | "csv" | "zip";
+
+const EXPORT_TYPES: Record<ExportKind, string> = {
+  pdf: "application/pdf",
+  csv: "text/csv",
+  zip: "application/zip",
+};
+
+/**
+ * Fetch an export as a file, rather than navigating to it.
+ *
+ * A plain <a download> link doesn't work in an app added to the iPhone Home
+ * Screen: iOS ignores the attribute, so a PDF opens in a viewer with no browser
+ * chrome and no way back, and a ZIP has nowhere to go. Having the file in hand
+ * lets us give it to the share sheet instead (see saveFile).
+ */
+export async function fetchExport(kind: ExportKind): Promise<File> {
+  const res = await fetch(`/api/export.${kind}`, withCookies);
+  if (res.status === 401) throw new NotSignedIn();
+  if (!res.ok) throw new Error("Couldn't prepare that file. Try again in a moment.");
+  const blob = await res.blob();
+  // Prefer the server's filename; fall back to a dated one.
+  const header = res.headers.get("content-disposition") ?? "";
+  const named = /filename="?([^";]+)"?/i.exec(header)?.[1];
+  const name = named ?? `groceries-${new Date().toISOString().slice(0, 10)}.${kind}`;
+  return new File([blob], name, { type: blob.type || EXPORT_TYPES[kind] });
+}
+
+/**
+ * - "shared": the share sheet opened and closed (she saved it, or chose not to).
+ * - "cancelled": she dismissed the sheet.
+ * - "downloaded": a normal browser download (desktop, or no share sheet).
+ * - "needs-tap": Safari refused to open the sheet because too long had passed
+ *   since her tap; the caller shows a "Save" button and calls this again.
+ */
+export type SaveResult = "shared" | "cancelled" | "downloaded" | "needs-tap";
+
+/** Hand a file to the phone's share sheet (Save to Files, AirDrop...) or download it. */
+export async function saveFile(file: File): Promise<SaveResult> {
+  const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
+  if (nav.share && nav.canShare?.({ files: [file] })) {
+    try {
+      await nav.share({ files: [file], title: file.name });
+      return "shared";
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
+      if (err instanceof DOMException && err.name === "NotAllowedError") return "needs-tap";
+      // Anything else: fall through to a plain download.
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return "downloaded";
 }
 
 // ---------------------------------------------------------------- helpers

@@ -2,15 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 
 import Icon from "../components/Icon";
 import {
+  ExportKind,
   Haul,
   NotSignedIn,
   ShoppingList,
   User,
   changePassword,
+  fetchExport,
   listHauls,
   money,
+  photoUrl,
+  removeAvatar,
+  saveFile,
   shoppingList,
   updateProfile,
+  uploadAvatar,
 } from "../api";
 
 /** "$1,234.50" -> 123450. Hauls report their total as a formatted string. */
@@ -19,6 +25,12 @@ function cents(total: string | null): number {
   const value = parseFloat(total.replace(/[^0-9.]/g, ""));
   return Number.isFinite(value) ? Math.round(value * 100) : 0;
 }
+
+const EXPORTS: { kind: ExportKind; title: string; sub: string }[] = [
+  { kind: "pdf", title: "PDF report", sub: "To read or print" },
+  { kind: "csv", title: "Spreadsheet", sub: "For Excel or Numbers" },
+  { kind: "zip", title: "Full backup", sub: "History and photos, as a ZIP" },
+];
 
 /**
  * Who you are, what you've done, and your data.
@@ -48,6 +60,18 @@ export default function ProfileView({
   const [nameDraft, setNameDraft] = useState(user.display_name ?? "");
   const [nameError, setNameError] = useState<string | null>(null);
   const [savingName, setSavingName] = useState(false);
+
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+
+  // One export at a time. "busy" while the server builds it; "ready" when Safari
+  // wouldn't open the share sheet on its own and she needs to tap once more.
+  const [exporting, setExporting] = useState<{
+    kind: ExportKind;
+    status: "busy" | "ready";
+    file?: File;
+  } | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const [pwOpen, setPwOpen] = useState(false);
   const [current, setCurrent] = useState("");
@@ -93,6 +117,66 @@ export default function ProfileView({
     };
   }, [hauls]);
 
+  async function startExport(kind: ExportKind) {
+    setExporting({ kind, status: "busy" });
+    setExportError(null);
+    try {
+      const file = await fetchExport(kind);
+      const result = await saveFile(file);
+      if (result === "needs-tap") {
+        setExporting({ kind, status: "ready", file });
+        return;
+      }
+      if (result === "downloaded") notify("Saved to your downloads");
+      setExporting(null);
+    } catch (err) {
+      if (err instanceof NotSignedIn) return onSignedOut();
+      setExportError(err instanceof Error ? err.message : "Couldn't prepare that file");
+      setExporting(null);
+    }
+  }
+
+  async function saveReady() {
+    // Called straight from her tap, so Safari lets the share sheet open.
+    if (!exporting?.file) return;
+    const result = await saveFile(exporting.file);
+    if (result !== "needs-tap") setExporting(null);
+  }
+
+  async function pickPhoto(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // Clear the input so choosing the same picture again still fires onChange.
+    event.target.value = "";
+    if (!file) return;
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const result = await uploadAvatar(file);
+      onUser(result.user);
+      notify("Profile photo updated");
+    } catch (err) {
+      if (err instanceof NotSignedIn) return onSignedOut();
+      setPhotoError(err instanceof Error ? err.message : "Couldn't save that photo");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function dropPhoto() {
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const result = await removeAvatar();
+      onUser(result.user);
+      notify("Photo removed");
+    } catch (err) {
+      if (err instanceof NotSignedIn) return onSignedOut();
+      setPhotoError(err instanceof Error ? err.message : "Couldn't remove that");
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
   async function saveName(event: React.FormEvent) {
     event.preventDefault();
     setSavingName(true);
@@ -134,14 +218,35 @@ export default function ProfileView({
   }
 
   const dash = "–";
+  const avatarSrc = photoUrl(user.avatar ?? null);
+  const initial = name.trim().charAt(0).toUpperCase();
 
   return (
     <div className="screen">
       {/* ------------------------------------------------------------ who */}
       <section className="profile-card">
-        <div className="avatar-lg" aria-hidden>
-          {name.trim().charAt(0).toUpperCase()}
-        </div>
+        {/* No `capture` attribute on purpose: on iOS that would jump straight to
+            the camera, but for a profile picture she'll usually want to choose
+            from her library, and without it iOS offers both. */}
+        <label className={photoBusy ? "avatar-lg avatar-edit busy" : "avatar-lg avatar-edit"}>
+          {avatarSrc ? <img src={avatarSrc} alt="Your profile photo" /> : initial}
+          <span className="avatar-badge" aria-hidden>
+            <Icon name="camera" size="1em" />
+          </span>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={pickPhoto}
+            disabled={photoBusy}
+            aria-label={avatarSrc ? "Change profile photo" : "Add a profile photo"}
+          />
+        </label>
+        {photoError && (
+          <p className="error">
+            <Icon name="close" />
+            {photoError}
+          </p>
+        )}
 
         {editingName ? (
           <form className="profile-edit" onSubmit={saveName}>
@@ -186,17 +291,25 @@ export default function ProfileView({
               <p>{user.email}</p>
               {memberSince && <p className="muted">Member since {memberSince}</p>}
             </div>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => {
-                setNameDraft(user.display_name ?? "");
-                setEditingName(true);
-              }}
-            >
-              <Icon name="pencil" />
-              Edit name
-            </button>
+            <div className="button-row center">
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  setNameDraft(user.display_name ?? "");
+                  setEditingName(true);
+                }}
+              >
+                <Icon name="pencil" />
+                Edit name
+              </button>
+              {avatarSrc && (
+                <button type="button" className="ghost" onClick={dropPhoto} disabled={photoBusy}>
+                  <Icon name="trash" />
+                  Remove photo
+                </button>
+              )}
+            </div>
           </>
         )}
       </section>
@@ -244,40 +357,49 @@ export default function ProfileView({
           <span>Your data</span>
         </h3>
         <div className="list-card">
-          {/* Plain links, not fetch(): the browser sends the session cookie with
-              the navigation and handles the save dialog itself, so there's no blob
-              to build or revoke. Same-origin, so `download` is honoured. */}
-          <a className="row setting" href="/api/export.pdf" download>
-            <span className="setting-icon">
-              <Icon name="download" />
-            </span>
-            <div className="row-body">
-              <strong>PDF report</strong>
-              <span className="row-sub">Everything you've bought, printable</span>
-            </div>
-            <Icon name="chevronRight" />
-          </a>
-          <a className="row setting" href="/api/export.csv" download>
-            <span className="setting-icon">
-              <Icon name="download" />
-            </span>
-            <div className="row-body">
-              <strong>Spreadsheet</strong>
-              <span className="row-sub">CSV, opens in Excel or Numbers</span>
-            </div>
-            <Icon name="chevronRight" />
-          </a>
-          <a className="row setting" href="/api/export.zip" download>
-            <span className="setting-icon">
-              <Icon name="download" />
-            </span>
-            <div className="row-body">
-              <strong>Full backup</strong>
-              <span className="row-sub">A ZIP of your history and photos</span>
-            </div>
-            <Icon name="chevronRight" />
-          </a>
+          {EXPORTS.map((item) => {
+            const mine = exporting?.kind === item.kind ? exporting : null;
+            return (
+              <button
+                type="button"
+                key={item.kind}
+                className="row setting"
+                // One at a time: the others wait while one is being prepared.
+                disabled={exporting !== null && !mine}
+                onClick={() => (mine?.status === "ready" ? saveReady() : startExport(item.kind))}
+              >
+                <span className="setting-icon">
+                  <Icon name="download" />
+                </span>
+                <div className="row-body">
+                  <strong>{item.title}</strong>
+                  <span className="row-sub">
+                    {mine?.status === "busy"
+                      ? "Getting it ready…"
+                      : mine?.status === "ready"
+                        ? "Ready. Tap to save it"
+                        : item.sub}
+                  </span>
+                </div>
+                {mine?.status === "busy" ? (
+                  <span className="spinner" aria-label="Working" />
+                ) : (
+                  <span className={mine ? "row-action strong" : "row-action"}>Save</span>
+                )}
+              </button>
+            );
+          })}
         </div>
+        {exportError && (
+          <p className="error" style={{ marginTop: 10 }}>
+            <Icon name="close" />
+            {exportError}
+          </p>
+        )}
+        <p className="caption" style={{ marginTop: 10 }}>
+          On your phone this opens the share sheet. Choose <strong>Save to Files</strong> to keep
+          a copy.
+        </p>
       </section>
 
       {/* -------------------------------------------------------- account */}

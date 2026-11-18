@@ -6,7 +6,7 @@ import ProfileView from "./views/ProfileView";
 import RateView from "./views/RateView";
 import ShopView from "./views/ShopView";
 import TripView from "./views/TripView";
-import { User, logout, me, pendingRatings } from "./api";
+import { User, logout, me, pendingRatings, photoUrl } from "./api";
 
 type Tab = "shop" | "trip" | "rate";
 
@@ -145,7 +145,11 @@ export default function App() {
               onClick={() => setView("profile")}
               aria-label="Your profile"
             >
-              {(user.display_name || user.email).trim().charAt(0).toUpperCase()}
+              {photoUrl(user.avatar ?? null) ? (
+                <img src={photoUrl(user.avatar ?? null)!} alt="" />
+              ) : (
+                (user.display_name || user.email).trim().charAt(0).toUpperCase()
+              )}
             </button>
           </div>
         </header>
@@ -153,7 +157,7 @@ export default function App() {
 
       {/* Keyed on the screen only: switching tabs refetches, but rating something
           must not remount RateView out from under its optimistic update. */}
-      <main key={view === "profile" ? "profile" : tab}>
+      <main key={view === "profile" ? "profile" : tab} className={view === "profile" ? "no-nav" : undefined}>
         {view === "profile" ? (
           <ProfileView
             user={user}
@@ -200,31 +204,35 @@ export default function App() {
       </main>
 
       {toast && (
-        <div className="toast" role="status">
+        <div className={view === "profile" ? "toast no-nav" : "toast"} role="status">
           <Icon name="check" />
           {toast}
         </div>
       )}
 
-      <nav>
-        {TABS.map((t) => {
-          const active = view === "tabs" && t.key === tab;
-          return (
-            <button
-              key={t.key}
-              className={active ? "nav-item active" : "nav-item"}
-              aria-current={active ? "page" : undefined}
-              onClick={() => go(t.key)}
-            >
-              <span className="nav-icon">
-                <Icon name={t.icon} size="1em" />
-              </span>
-              <span className="nav-label">{t.label}</span>
-              {t.key === "rate" && pending > 0 && <span className="badge">{pending}</span>}
-            </button>
-          );
-        })}
-      </nav>
+      {/* The profile page is a detail screen: Back is the only way out, so there
+          is no tab bar competing with it. */}
+      {view === "tabs" && (
+        <nav>
+          {TABS.map((t) => {
+            const active = view === "tabs" && t.key === tab;
+            return (
+              <button
+                key={t.key}
+                className={active ? "nav-item active" : "nav-item"}
+                aria-current={active ? "page" : undefined}
+                onClick={() => go(t.key)}
+              >
+                <span className="nav-icon">
+                  <Icon name={t.icon} size="1em" />
+                </span>
+                <span className="nav-label">{t.label}</span>
+                {t.key === "rate" && pending > 0 && <span className="badge">{pending}</span>}
+              </button>
+            );
+          })}
+        </nav>
+      )}
     </div>
   );
 }
