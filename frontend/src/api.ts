@@ -217,6 +217,49 @@ export async function listHauls() {
   return json<{ hauls: Haul[] }>(await fetch("/api/hauls", withCookies));
 }
 
+// ---------------------------------------------------------------- finding a store
+
+/** A shop from the map search. `label` is what gets saved as the store's name. */
+export type Place = {
+  id: number | null;
+  name: string;
+  /** "Trader Joe's \u00b7 39324 Argonaut Way": the name plus what tells branches apart. */
+  label: string;
+  address: string;
+  distance_m: number | null;
+};
+
+export type Coords = { lat: number; lon: number };
+
+// POST, not GET: the coordinates and what she typed stay out of URLs, so they stay
+// out of access logs.
+export async function nearbyStores(at: Coords) {
+  return json<{ places: Place[] }>(await postJson("/api/places/nearby", at));
+}
+
+export async function searchStores(q: string, at?: Coords | null) {
+  return json<{ places: Place[] }>(await postJson("/api/places/search", { q, ...(at ?? {}) }));
+}
+
+const MILES_REGIONS = new Set(["US", "GB", "LR", "MM"]);
+
+/** "0.4 mi" or "650 m", in whichever units her phone's region uses. */
+export function distanceLabel(meters: number | null): string {
+  if (meters == null) return "";
+  let miles = false;
+  try {
+    const region = new Intl.Locale(navigator.language).region;
+    miles = !!region && MILES_REGIONS.has(region);
+  } catch {
+    // Unknown locale: metric.
+  }
+  if (miles) {
+    const feet = meters * 3.28084;
+    return feet < 500 ? `${Math.round(feet / 10) * 10} ft` : `${(meters / 1609.344).toFixed(1)} mi`;
+  }
+  return meters < 1000 ? `${Math.round(meters / 10) * 10} m` : `${(meters / 1000).toFixed(1)} km`;
+}
+
 // ---------------------------------------------------------------- exports
 
 export type ExportKind = "pdf" | "csv" | "zip";

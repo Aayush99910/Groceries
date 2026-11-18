@@ -28,7 +28,9 @@ export type IconName =
   | "user"
   | "lock"
   | "pencil"
-  | "clock";
+  | "clock"
+  | "search"
+  | "mapPin";
 
 type Props = {
   name: IconName;
@@ -146,6 +148,20 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <path d="M12 3.5v11" />
       <path d="M7.5 10.5 12 15l4.5-4.5" />
       <path d="M4 17.5v1.6a1.9 1.9 0 0 0 1.9 1.9h12.2a1.9 1.9 0 0 0 1.9-1.9v-1.6" />
+    </>
+  ),
+
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="M16 16l4.5 4.5" />
+    </>
+  ),
+
+  mapPin: (
+    <>
+      <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z" />
+      <circle cx="12" cy="10" r="2.4" />
     </>
   ),
 

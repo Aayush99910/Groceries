@@ -16,14 +16,36 @@ const TABS: { key: Tab; label: string; icon: IconName }[] = [
   { key: "rate", label: "Rate", icon: "thumbUp" },
 ];
 
-// The store she's at is shared by the Shop and Add tabs, and survives a reload:
-// she is in one shop for the whole trip, not twelve.
+// The store she's at is shared by the Add and Shop tabs.
+//
+// It is remembered for the length of a shop, NOT forever. It used to be kept
+// indefinitely, so a day later the Add tab still said "Trader Joe's" when she was
+// standing in Safeway. Now it expires after a shop's worth of hours and she's asked
+// again. Each time she adds something the clock restarts.
 const STORE_KEY = "groceries.lastStore";
+const STORE_TTL_MS = 8 * 60 * 60 * 1000;
 
 function readStore(): string {
   try {
-    return localStorage.getItem(STORE_KEY) ?? "";
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return "";
+    const saved = JSON.parse(raw) as { name?: unknown; at?: unknown };
+    if (
+      typeof saved.name === "string" &&
+      typeof saved.at === "number" &&
+      Date.now() - saved.at < STORE_TTL_MS
+    ) {
+      return saved.name;
+    }
+    localStorage.removeItem(STORE_KEY);
+    return "";
   } catch {
+    // Not JSON: the old plain-text value from before expiry existed. Drop it.
+    try {
+      localStorage.removeItem(STORE_KEY);
+    } catch {
+      // ignore
+    }
     return "";
   }
 }
@@ -49,7 +71,7 @@ export default function App() {
   const setStore = useCallback((next: string) => {
     setStoreState(next);
     try {
-      localStorage.setItem(STORE_KEY, next);
+      localStorage.setItem(STORE_KEY, JSON.stringify({ name: next, at: Date.now() }));
     } catch {
       // Private mode: it just won't be remembered.
     }
@@ -59,6 +81,16 @@ export default function App() {
     setToast(message);
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 2800);
+  }, []);
+
+  // The app can sit open in the background for days. When she comes back, drop a
+  // store that has expired in the meantime.
+  useEffect(() => {
+    function onVisible() {
+      if (!document.hidden) setStoreState(readStore());
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, []);
 
   useEffect(() => {

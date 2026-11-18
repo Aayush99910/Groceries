@@ -1749,12 +1749,6 @@ button {
   padding: 14px 24px;
 }
 
-.store-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
 .store-bar {
   display: flex;
   align-items: center;
@@ -2243,4 +2237,238 @@ button {
   .dialog-overlay {
     animation: none;
   }
+}
+
+/* ---------------- choosing a store (pop-up) ---------------- */
+
+.store-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 30px 22px 26px;
+  text-align: center;
+}
+
+.store-prompt .empty-icon {
+  margin-bottom: 4px;
+}
+
+/* A fixed height, so the sheet doesn't jump around as results come and go. */
+.store-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: min(88dvh, 700px);
+  padding: 10px 20px calc(16px + env(safe-area-inset-bottom));
+  overflow: hidden;
+}
+
+.store-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.store-sheet-head h2 {
+  font-size: 20px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 0 14px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.search-box:focus-within {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  /* 16px or more, or iOS zooms the whole page when it gains focus. */
+  font-size: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-box input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+.search-box input::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.store-sheet-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding-bottom: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.place-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 62px;
+  padding: 10px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.place-row + .place-row {
+  border-top: 1px solid var(--border);
+}
+
+.place-row:active {
+  background: var(--surface-sunk);
+}
+
+/* Not found on the map? Use it exactly as typed. Never a dead end. */
+.place-row.manual {
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.place-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--surface-sunk);
+  color: var(--muted);
+  font-size: 18px;
+}
+
+.place-icon.plain {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.place-icon.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.locate-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.locate-btn:disabled {
+  opacity: 0.75;
+}
+
+.locate-btn .place-icon {
+  background: var(--accent);
+  color: #fff;
+}
+
+.locate-btn .row-sub {
+  white-space: normal;
+}
+
+.sheet-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.sheet-note {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.text-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.text-link:disabled {
+  opacity: 0.5;
+}
+
+@media (prefers-color-scheme: dark) {
+  .place-icon.on,
+  .locate-btn .place-icon {
+    color: #0d241a;
+  }
+}
+
+/* A chip with a long name (a store and its street) wraps instead of overflowing. */
+.chips.wrap .chip {
+  max-width: 100%;
+  padding-block: 8px;
+  line-height: 1.25;
+  text-align: left;
+  white-space: normal;
+}
+
+.store-bar-text .row-sub {
+  max-width: 100%;
+}
+
+/* The distance gets its own spot, so a long address can't push it out of sight. */
+.place-distance {
+  flex: none;
+  font-size: 13.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* The street is what tells two branches apart, so it may take a second line. */
+.place-row .row-sub {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow: hidden;
 }

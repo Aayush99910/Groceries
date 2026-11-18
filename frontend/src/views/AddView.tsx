@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import DeleteButton from "../components/DeleteButton";
 import Icon from "../components/Icon";
+import StoreSheet from "../components/StoreSheet";
 import Suggest from "../components/Suggest";
 import {
   ListEntry,
@@ -27,13 +28,14 @@ const TRIP_WINDOW_MS = 8 * 60 * 60 * 1000;
 /**
  * "I'm at the shop."
  *
- * The old Log tab was a form with the store as just another field, which made
- * the one thing that never changes mid-trip look as important as the thing that
- * changes every time. Now it's in two steps that match how shopping actually goes:
+ * Two steps that match how shopping actually goes:
  *
- *   1. Say where you are (once per trip).
+ *   1. Say where you are (once per shop). That's a pop-up over this page, not a page
+ *      of its own: find stores near you, search by name, or pick a recent one.
  *   2. Add things as they go in the trolley. Each shows up in the basket below
- *      with a running total, so you can see the trip taking shape.
+ *      with a running total, so you can see the shop taking shape.
+ *
+ * The store isn't remembered forever (see App.tsx), so there's no stale default.
  */
 export default function AddView({
   store,
@@ -50,8 +52,8 @@ export default function AddView({
   notify: (message: string) => void;
   onSignedOut: () => void;
 }) {
-  const [editingStore, setEditingStore] = useState(!store);
-  const [storeDraft, setStoreDraft] = useState("");
+  // The store pop-up. Opens by itself when there's no store to start from.
+  const [sheetOpen, setSheetOpen] = useState(!store);
   const [knownStores, setKnownStores] = useState<string[]>([]);
 
   const [name, setName] = useState("");
@@ -76,6 +78,12 @@ export default function AddView({
 
   useEffect(loadRecent, [loadRecent, refreshKey]);
 
+  // No store (first visit, or the remembered one expired while the app sat open):
+  // ask which one, rather than leaving her on an empty page.
+  useEffect(() => {
+    if (!store) setSheetOpen(true);
+  }, [store]);
+
   useEffect(() => {
     suggestStores("")
       .then((list) => setKnownStores(list.map((o) => o.name)))
@@ -97,7 +105,6 @@ export default function AddView({
   }, [photo]);
 
   const itemOptions = useCallback((q: string) => suggestItems(q), []);
-  const storeOptions = useCallback((q: string) => suggestStores(q), []);
 
   // This trip's basket: this store, recent, newest first.
   const basket = useMemo(() => {
@@ -122,8 +129,7 @@ export default function AddView({
     const clean = next.trim();
     if (!clean) return;
     onStore(clean);
-    setEditingStore(false);
-    setStoreDraft("");
+    setSheetOpen(false);
   }
 
   function fillFrom(entry: ListEntry) {
@@ -148,6 +154,8 @@ export default function AddView({
       setName("");
       setPrice("");
       setPhoto(null);
+      // Adding something means she's still shopping here: restart the store's clock.
+      onStore(store);
       // onLogged bumps the refresh key, which reloads the basket.
       onLogged();
       nameRef.current?.querySelector("input")?.focus();
@@ -173,55 +181,37 @@ export default function AddView({
     }
   }
 
+  // "Trader Joe's · 39324 Argonaut Way": the name on one line, the street under it.
+  const [storeName, ...storeRest] = store.split(" \u00b7 ");
+  const storeNote = storeRest.join(" \u00b7 ");
+
+  const sheet = sheetOpen && (
+    <StoreSheet
+      current={store}
+      recent={knownStores}
+      onPick={chooseStore}
+      onClose={() => setSheetOpen(false)}
+      onSignedOut={onSignedOut}
+    />
+  );
+
   // -------------------------------------------------------------- step 1
 
-  if (editingStore) {
-    const choices = knownStores.filter((s) => !sameStore(s, store));
+  if (!store) {
     return (
       <div className="screen">
-        <section className="card store-picker">
-          <h2>{store ? "Change store" : "Where are you shopping?"}</h2>
-          <p className="caption">
-            {store
-              ? "Your basket follows the store you pick."
-              : "Pick it once, then add things as they go in the trolley."}
-          </p>
-
-          {choices.length > 0 && (
-            <div className="chips wrap">
-              {choices.slice(0, 8).map((s) => (
-                <button type="button" key={s} className="chip" onClick={() => chooseStore(s)}>
-                  <Icon name="store" size="1em" />
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <form
-            className="stack"
-            onSubmit={(e) => {
-              e.preventDefault();
-              chooseStore(storeDraft);
-            }}
-          >
-            <Suggest
-              label={choices.length > 0 ? "Or a new store" : "Store name"}
-              value={storeDraft}
-              onChange={setStoreDraft}
-              fetchSuggestions={storeOptions}
-              placeholder="Trader Joe's"
-            />
-            <button type="submit" className="primary" disabled={!storeDraft.trim()}>
-              {store ? "Use this store" : "Start shopping"}
-            </button>
-            {store && (
-              <button type="button" className="link" onClick={() => setEditingStore(false)}>
-                Keep {store}
-              </button>
-            )}
-          </form>
+        <section className="card store-prompt">
+          <div className="empty-icon">
+            <Icon name="mapPin" size="1.5em" />
+          </div>
+          <h2>Where are you shopping?</h2>
+          <p className="caption">Pick the store once, then add things as they go in the trolley.</p>
+          <button type="button" className="primary inline" onClick={() => setSheetOpen(true)}>
+            <Icon name="search" />
+            Choose a store
+          </button>
         </section>
+        {sheet}
       </div>
     );
   }
@@ -236,9 +226,10 @@ export default function AddView({
         </span>
         <span className="store-bar-text">
           <span className="eyebrow">Shopping at</span>
-          <strong>{store}</strong>
+          <strong>{storeName}</strong>
+          {storeNote && <span className="row-sub">{storeNote}</span>}
         </span>
-        <button type="button" className="ghost" onClick={() => setEditingStore(true)}>
+        <button type="button" className="ghost" onClick={() => setSheetOpen(true)}>
           Change
         </button>
       </div>
@@ -385,6 +376,7 @@ export default function AddView({
           </>
         )}
       </section>
+      {sheet}
     </div>
   );
 }
