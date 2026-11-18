@@ -816,12 +816,27 @@ button {
   display: block;
   width: 100%;
   aspect-ratio: 1 / 1;
-  max-height: 34dvh;
+  max-height: 36dvh;
   min-height: 190px;
   object-fit: cover;
   border-radius: 26px;
   background: var(--surface-sunk);
   box-shadow: var(--shadow);
+}
+
+/* Short phones (SE-sized): a smaller photo, so Undo isn't pushed under the tab bar. */
+@media (max-height: 740px) {
+  .rate-photo {
+    max-height: 27dvh;
+    min-height: 140px;
+  }
+}
+
+@media (max-height: 660px) {
+  .rate-photo {
+    max-height: 22dvh;
+    min-height: 120px;
+  }
 }
 
 .rate-photo-empty {
@@ -842,27 +857,27 @@ button {
   color: var(--muted);
 }
 
-/* The two answers: big, coloured, labelled. Under the thumb. */
+/* The two answers: coloured and labelled, but sized like buttons, not billboards. */
 .vote-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
 }
 
 .vote {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-height: 82px;
-  padding: 0 10px;
+  gap: 8px;
+  min-height: 50px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 20px;
+  border-radius: 14px;
   font-family: var(--font-round);
-  font-size: 16.5px;
+  font-size: 16px;
   font-weight: 700;
   white-space: nowrap;
+  font-size: 16px;
   transition: transform 0.08s ease;
 }
 
@@ -873,20 +888,18 @@ button {
 .vote.up {
   background: var(--accent-soft);
   color: var(--accent);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .vote.down {
   background: var(--down-soft);
   color: var(--down);
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--down) 30%, transparent);
 }
 
 .rate-more {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px;
+  justify-content: center;
+  gap: 8px;
 }
 
 .text-btn {
@@ -894,7 +907,7 @@ button {
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  padding: 0 10px;
+  padding: 0 14px;
   border: 0;
   background: none;
   color: var(--text-soft);
@@ -902,22 +915,69 @@ button {
   font-weight: 650;
 }
 
+.text-btn.danger-text {
+  color: var(--down);
+}
+
 .text-btn:disabled {
   opacity: 0.35;
 }
 
-/* While confirming a delete, the row is just Cancel / Delete. */
-.rate-more:has(.confirm) .text-btn {
-  display: none;
+/* What you just did, with the way to take it back right beside it. */
+.last-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 
-.rate-more .confirm {
-  flex: 1;
+.last-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  font-size: 14px;
 }
 
-.rate-more .confirm > * {
+.last-icon.up {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.last-icon.down {
+  background: var(--down-soft);
+  color: var(--down);
+}
+
+.last-text {
   flex: 1;
-  justify-content: center;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.last-text strong {
+  font-size: 14.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.last-text span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.last-action .text-btn {
+  color: var(--accent);
+  padding: 0 10px;
 }
 
 .empty-actions {
@@ -1947,5 +2007,118 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation-duration: 2.4s;
+  }
+}
+
+/* ---------------- iOS-style alert ---------------- */
+
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(24, 18, 10, 0.4);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: sheet-fade 0.15s ease-out;
+}
+
+.dialog {
+  width: min(100%, 290px);
+  overflow: hidden;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 12px 40px rgba(24, 18, 10, 0.3);
+  text-align: center;
+  animation: dialog-pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+
+@keyframes dialog-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.dialog-body {
+  padding: 20px 18px 18px;
+}
+
+.dialog-title {
+  margin: 0;
+  font-family: var(--font-round);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.dialog-message {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--text-soft);
+}
+
+/* Buttons split by hairlines, like a UIAlertController. */
+.dialog-actions {
+  display: flex;
+  border-top: 1px solid var(--border-strong);
+}
+
+.dialog-actions.stacked {
+  flex-direction: column;
+}
+
+.dialog-btn {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 400;
+}
+
+.dialog-btn + .dialog-btn {
+  border-left: 1px solid var(--border-strong);
+}
+
+.dialog-actions.stacked .dialog-btn + .dialog-btn {
+  border-left: 0;
+  border-top: 1px solid var(--border-strong);
+}
+
+.dialog-btn:active {
+  background: var(--surface-sunk);
+}
+
+.dialog-btn.tone-primary {
+  font-weight: 700;
+}
+
+.dialog-btn.tone-destructive {
+  color: var(--down);
+  font-weight: 700;
+}
+
+.dialog-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialog,
+  .dialog-overlay {
+    animation: none;
   }
 }

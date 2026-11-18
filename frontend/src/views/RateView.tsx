@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import DeleteButton from "../components/DeleteButton";
+import ConfirmDialog from "../components/ConfirmDialog";
 import Icon from "../components/Icon";
 import {
   NotSignedIn,
@@ -12,15 +12,20 @@ import {
   unratePurchase,
 } from "../api";
 
+/** What the pop-up is currently asking about, if anything. */
+type Asking =
+  | { kind: "rate"; purchase: Purchase; liked: boolean }
+  | { kind: "delete"; purchase: Purchase };
+
 /**
  * "Did you like it?" -- one thing at a time.
  *
- * The first version listed every unrated item as a card and made her scroll and
- * hunt for the right row's buttons. That is the wrong shape for a yes/no
- * question. Here there is exactly one item on screen, big enough to recognise
- * from its photo, with the two answers under your thumb. Answer, and the next
- * one slides in. A progress bar says how many are left, and you can always step
- * back one.
+ * One item is on screen, big enough to recognise from its photo. Choosing an
+ * answer (or deleting) asks "are you sure?" in an iOS-style pop-up first, because
+ * both are easy to hit by accident and the delete can't be taken back.
+ *
+ * The most recent rating is shown under the buttons with an Undo right beside it,
+ * so it's obvious what Undo will do and which item it brings back.
  */
 export default function RateView({
   onRated,
@@ -34,9 +39,10 @@ export default function RateView({
   goTrip: () => void;
 }) {
   const [queue, setQueue] = useState<Purchase[] | null>(null);
-  // Newest last. "Back" pops from the end.
+  // Newest last. Undo pops from the end.
   const [history, setHistory] = useState<{ purchase: Purchase; liked: boolean }[]>([]);
   const [total, setTotal] = useState(0);
+  const [asking, setAsking] = useState<Asking | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,6 +61,7 @@ export default function RateView({
     // Optimistic: the next item appears immediately; a failure puts this back.
     setQueue((current) => (current ?? []).filter((p) => p.id !== purchase.id));
     setHistory((h) => [...h, { purchase, liked }]);
+    setError(null);
     try {
       await ratePurchase(purchase.id, liked);
       onRated();
@@ -66,11 +73,12 @@ export default function RateView({
     }
   }
 
-  async function back() {
+  async function undo() {
     const last = history[history.length - 1];
     if (!last) return;
     setHistory((h) => h.slice(0, -1));
     setQueue((current) => [last.purchase, ...(current ?? [])]);
+    setError(null);
     await unratePurchase(last.purchase.id).catch(() => undefined);
     onRated();
   }
@@ -83,6 +91,7 @@ export default function RateView({
   async function remove(purchase: Purchase) {
     setQueue((current) => (current ?? []).filter((p) => p.id !== purchase.id));
     setTotal((n) => Math.max(0, n - 1));
+    setError(null);
     try {
       await deletePurchase(purchase.id);
       onRated();
@@ -103,6 +112,8 @@ export default function RateView({
     );
   }
   if (queue === null) return <p className="hint loading">Loading…</p>;
+
+  const last = history[history.length - 1];
 
   // ---------------------------------------------------------------- done
 
@@ -133,10 +144,10 @@ export default function RateView({
               Start a trip
             </button>
           )}
-          {history.length > 0 && (
-            <button type="button" className="ghost" onClick={back}>
+          {last && (
+            <button type="button" className="ghost" onClick={undo}>
               <Icon name="undo" />
-              Undo {history[history.length - 1].purchase.item_name}
+              Undo {last.purchase.item_name}
             </button>
           )}
         </div>
@@ -188,36 +199,101 @@ export default function RateView({
         <button
           type="button"
           className="vote down"
-          onClick={() => rate(current, false)}
-          aria-label={`Did not like ${current.item_name}`}
+          onClick={() => setAsking({ kind: "rate", purchase: current, liked: false })}
+          aria-label={`Skip ${current.item_name}`}
         >
-          <Icon name="thumbDown" size="1.5em" />
+          <Icon name="thumbDown" />
           Skip it
         </button>
         <button
           type="button"
           className="vote up"
-          onClick={() => rate(current, true)}
-          aria-label={`Liked ${current.item_name}`}
+          onClick={() => setAsking({ kind: "rate", purchase: current, liked: true })}
+          aria-label={`Buy ${current.item_name} again`}
         >
-          <Icon name="thumbUp" size="1.5em" />
+          <Icon name="thumbUp" />
           Buy again
         </button>
       </div>
 
       <div className="rate-more">
-        <button type="button" className="text-btn" onClick={back} disabled={history.length === 0}>
-          <Icon name="chevronLeft" size="1em" />
-          Back
-        </button>
         {queue.length > 1 && (
           <button type="button" className="text-btn" onClick={() => later(current)}>
             <Icon name="clock" size="1em" />
             Ask me later
           </button>
         )}
-        <DeleteButton label={current.item_name} onDelete={() => remove(current)} />
+        <button
+          type="button"
+          className="text-btn danger-text"
+          onClick={() => setAsking({ kind: "delete", purchase: current })}
+        >
+          <Icon name="trash" size="1em" />
+          Delete
+        </button>
       </div>
+
+      {/* What you just did, and the way to take it back. Sits below everything
+          else so it appearing never shifts the buttons you're about to tap. */}
+      {last && (
+        <div className="last-action" role="status">
+          <span className={last.liked ? "last-icon up" : "last-icon down"}>
+            <Icon name={last.liked ? "thumbUp" : "thumbDown"} size="1em" />
+          </span>
+          <span className="last-text">
+            <strong>{last.purchase.item_name}</strong>
+            <span>{last.liked ? "Marked buy again" : "Marked skip"}</span>
+          </span>
+          <button type="button" className="text-btn" onClick={undo}>
+            <Icon name="undo" size="1em" />
+            Undo
+          </button>
+        </div>
+      )}
+
+      {asking?.kind === "rate" && (
+        <ConfirmDialog
+          title={asking.liked ? `Buy ${asking.purchase.item_name} again?` : `Skip ${asking.purchase.item_name}?`}
+          message={
+            asking.liked
+              ? "It goes on your Shop list, with what you paid for it."
+              : "It moves to the things you didn't like, and stays off your main list."
+          }
+          onCancel={() => setAsking(null)}
+          actions={[
+            { label: "Cancel", onPress: () => setAsking(null) },
+            {
+              label: asking.liked ? "Buy again" : "Skip it",
+              tone: "primary",
+              onPress: () => {
+                const { purchase, liked } = asking;
+                setAsking(null);
+                rate(purchase, liked);
+              },
+            },
+          ]}
+        />
+      )}
+
+      {asking?.kind === "delete" && (
+        <ConfirmDialog
+          title={`Delete ${asking.purchase.item_name}?`}
+          message="This removes it from your history, along with its price. It can't be undone."
+          onCancel={() => setAsking(null)}
+          actions={[
+            { label: "Cancel", onPress: () => setAsking(null) },
+            {
+              label: "Delete",
+              tone: "destructive",
+              onPress: () => {
+                const { purchase } = asking;
+                setAsking(null);
+                remove(purchase);
+              },
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }
