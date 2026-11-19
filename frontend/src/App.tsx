@@ -6,7 +6,7 @@ import ProfileView from "./views/ProfileView";
 import RateView from "./views/RateView";
 import ShopView from "./views/ShopView";
 import AddView from "./views/AddView";
-import { User, logout, me, pendingRatings, photoUrl } from "./api";
+import { StorePlace, User, logout, me, pendingRatings, photoUrl } from "./api";
 
 type Tab = "shop" | "add" | "rate";
 
@@ -25,20 +25,26 @@ const TABS: { key: Tab; label: string; icon: IconName }[] = [
 const STORE_KEY = "groceries.lastStore";
 const STORE_TTL_MS = 8 * 60 * 60 * 1000;
 
-function readStore(): string {
+function readStore(): StorePlace | null {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) return "";
-    const saved = JSON.parse(raw) as { name?: unknown; at?: unknown };
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as Record<string, unknown>;
     if (
       typeof saved.name === "string" &&
       typeof saved.at === "number" &&
       Date.now() - saved.at < STORE_TTL_MS
     ) {
-      return saved.name;
+      // place_id may be absent: saved before branches were tracked, or typed by hand.
+      return {
+        name: saved.name,
+        place_id: typeof saved.place_id === "number" ? saved.place_id : null,
+        lat: typeof saved.lat === "number" ? saved.lat : null,
+        lon: typeof saved.lon === "number" ? saved.lon : null,
+      };
     }
     localStorage.removeItem(STORE_KEY);
-    return "";
+    return null;
   } catch {
     // Not JSON: the old plain-text value from before expiry existed. Drop it.
     try {
@@ -46,7 +52,7 @@ function readStore(): string {
     } catch {
       // ignore
     }
-    return "";
+    return null;
   }
 }
 
@@ -68,10 +74,12 @@ export default function App() {
   // new function every render would refetch on every render.
   const onSignedOut = useCallback(() => setUser(null), []);
 
-  const setStore = useCallback((next: string) => {
+  const setStore = useCallback((next: StorePlace) => {
     setStoreState(next);
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ name: next, at: Date.now() }));
+      // place_id and coordinates ride along, so coming back to a remembered store
+      // still logs against the same branch rather than starting a new one.
+      localStorage.setItem(STORE_KEY, JSON.stringify({ ...next, at: Date.now() }));
     } catch {
       // Private mode: it just won't be remembered.
     }
@@ -114,7 +122,7 @@ export default function App() {
     } catch {
       // ignore
     }
-    setStoreState("");
+    setStoreState(null);
     setUser(null);
     setView("tabs");
     setTab("shop");
@@ -201,8 +209,11 @@ export default function App() {
             {tab === "shop" && (
               <ShopView
                 refreshKey={refreshKey}
-                store={store}
-                onStore={setStore}
+                // Shop only displays and compares the name, so it keeps the plain
+                // string. A store set from here was typed rather than picked off
+                // the map, so it carries no branch id.
+                store={store?.name ?? ""}
+                onStore={(name) => setStore({ name })}
                 pending={pending}
                 goRate={() => go("rate")}
                 goAdd={() => go("add")}

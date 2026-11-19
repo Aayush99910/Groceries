@@ -7,6 +7,7 @@ import StoreSheet from "../components/StoreSheet";
 import Suggest from "../components/Suggest";
 import {
   ListEntry,
+  StorePlace,
   NotSignedIn,
   Purchase,
   deletePurchase,
@@ -39,20 +40,24 @@ const TRIP_WINDOW_MS = 8 * 60 * 60 * 1000;
  * The store isn't remembered forever (see App.tsx), so there's no stale default.
  */
 export default function AddView({
-  store,
+  store: chosen,
   onStore,
   refreshKey,
   onLogged,
   notify,
   onSignedOut,
 }: {
-  store: string;
-  onStore: (store: string) => void;
+  /** The chosen store: its name plus, when picked off the map, which branch. */
+  store: StorePlace | null;
+  onStore: (store: StorePlace) => void;
   refreshKey: number;
   onLogged: () => void;
   notify: (message: string) => void;
   onSignedOut: () => void;
 }) {
+  // Everything below only needs the name; `chosen` carries the branch for logging.
+  const store = chosen?.name ?? "";
+
   // The store pop-up. Opens by itself when there's no store to start from.
   const [sheetOpen, setSheetOpen] = useState(!store);
   const [knownStores, setKnownStores] = useState<string[]>([]);
@@ -126,10 +131,10 @@ export default function AddView({
     .sort((a, b) => b.likes - a.likes || b.times_bought - a.times_bought)
     .slice(0, 8);
 
-  function chooseStore(next: string) {
-    const clean = next.trim();
+  function chooseStore(next: StorePlace) {
+    const clean = next.name.trim();
     if (!clean) return;
-    onStore(clean);
+    onStore({ ...next, name: clean });
     setSheetOpen(false);
   }
 
@@ -149,14 +154,14 @@ export default function AddView({
     setSaving(true);
     setError(null);
     try {
-      const result = await logPurchase({ name: name.trim(), store, price, photo });
+      const result = await logPurchase({ name: name.trim(), store, price, photo, place: chosen });
       notify(`${result.purchase.item_name} added`);
       // Keep the store, clear the rest, ready for the next thing in the trolley.
       setName("");
       setPrice("");
       setPhoto(null);
       // Adding something means she's still shopping here: restart the store's clock.
-      onStore(store);
+      if (chosen) onStore(chosen);
       // onLogged bumps the refresh key, which reloads the basket.
       onLogged();
       nameRef.current?.querySelector("input")?.focus();

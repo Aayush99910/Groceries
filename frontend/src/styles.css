@@ -121,7 +121,7 @@ header {
 .screen {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
 .stack {
@@ -158,7 +158,7 @@ nav {
 h1 {
   margin: 0;
   font-family: var(--font-round);
-  font-size: 30px;
+  font-size: 25px;
   line-height: 1.15;
   font-weight: 750;
   letter-spacing: -0.02em;
@@ -202,9 +202,9 @@ h2 {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 0 4px 8px;
+  margin: 0 4px 6px;
   font-family: var(--font-round);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
 }
@@ -315,7 +315,7 @@ label {
 .field input {
   width: 100%;
   font-size: 16px;
-  padding: 14px 14px;
+  padding: 11px 12px;
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -347,8 +347,8 @@ label {
 .form-card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 18px;
+  gap: 12px;
+  padding: 14px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -447,9 +447,10 @@ label {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 51px;
-  padding: 0 12px;
+  gap: 7px;
+  /* Matches the price input beside it, and stays at the 44px touch floor. */
+  height: 44px;
+  padding: 0 10px;
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -1753,8 +1754,8 @@ button {
 .store-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
+  gap: 10px;
+  padding: 10px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1792,12 +1793,12 @@ button {
 .basket-empty {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 20px 16px;
+  gap: 10px;
+  padding: 14px 14px;
   border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius-lg);
   color: var(--muted);
-  font-size: 14.5px;
+  font-size: 14px;
 }
 
 /* ---------------- quick-add sheet ---------------- */

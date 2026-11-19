@@ -156,11 +156,19 @@ export async function logPurchase(input: {
   store: string;
   price: string;
   photo: File | null;
+  /** Which branch, when she picked it off the map rather than typing a name. */
+  place?: StorePlace | null;
 }) {
   const body = new FormData();
   body.append("name", input.name);
   body.append("store", input.store);
   body.append("price", input.price);
+  // Optional: a hand-typed store sends none of these and behaves as it always did.
+  if (input.place?.place_id != null) {
+    body.append("place_id", String(input.place.place_id));
+    if (input.place.lat != null) body.append("lat", String(input.place.lat));
+    if (input.place.lon != null) body.append("lon", String(input.place.lon));
+  }
   if (input.photo) body.append("photo", input.photo);
   return json<{ purchase: Purchase; haul: { id: number; store: string; item_count: number } }>(
     await fetch("/api/purchases", { ...withCookies, method: "POST", body })
@@ -225,6 +233,21 @@ export async function listHauls() {
 // Re-exported here so existing imports from "../api" keep working.
 export type { Place, Coords } from "./places";
 export { nearbyStores, searchStores, PlacesUnavailable } from "./places";
+
+/**
+ * A chosen store, as the app remembers it.
+ *
+ * `name` is what she reads. `place_id` is OpenStreetMap's permanent number for
+ * that shop and is what the server uses as the store's identity -- the label can
+ * come back worded differently between lookups, the number can't. A store typed
+ * by hand has a name and nothing else.
+ */
+export type StorePlace = {
+  name: string;
+  place_id?: number | null;
+  lat?: number | null;
+  lon?: number | null;
+};
 
 
 const MILES_REGIONS = new Set(["US", "GB", "LR", "MM"]);

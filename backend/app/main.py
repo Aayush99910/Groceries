@@ -350,10 +350,30 @@ def _find_or_create_item(
     return row
 
 
-def _find_or_create_haul(db: psycopg.Connection, user_id: int, store: str) -> dict:
+def store_key_for(display: str, place_id: str | None) -> str:
+    """What makes two trips "the same store".
+
+    OpenStreetMap's place_id when we have one, because it is stable: the same shop
+    looked up twice is the same store even if the address comes back worded
+    differently. Stores she typed by hand have no place_id and fall back to the
+    normalised name, which is what the whole app did before.
+
+    The osm: prefix keeps the two kinds of key from ever colliding.
+    """
+    return f"osm:{place_id}" if place_id else key_for(display)
+
+
+def _find_or_create_haul(
+    db: psycopg.Connection,
+    user_id: int,
+    store: str,
+    place_id: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+) -> dict:
     """A trip is 'one store, one day' -- inferred, so nobody taps 'start trip'."""
     display = normalize(store) or "Unknown store"
-    key = key_for(display)
+    key = store_key_for(display, place_id)
     today = datetime.now().date().isoformat()
 
     row = db.execute(
@@ -361,13 +381,23 @@ def _find_or_create_haul(db: psycopg.Connection, user_id: int, store: str) -> di
         (user_id, key, today),
     ).fetchone()
     if row:
+        # The label can improve between lookups (a street where there was only a
+        # neighbourhood). Keep the better one; the key is what holds identity.
+        if place_id and (not row["place_id"] or len(display) > len(row["store"])):
+            row = db.execute(
+                """UPDATE hauls SET store = %s, place_id = %s, lat = %s, lon = %s
+                   WHERE id = %s RETURNING *""",
+                (display, place_id, lat, lon, row["id"]),
+            ).fetchone()
+            db.commit()
         return row
 
     row = db.execute(
-        """INSERT INTO hauls (user_id, store, store_key, shopped_on, created_at)
-           VALUES (%s, %s, %s, %s, %s)
+        """INSERT INTO hauls (user_id, store, store_key, shopped_on, created_at,
+                              place_id, lat, lon)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
            RETURNING *""",
-        (user_id, display, key, today, utcnow_iso()),
+        (user_id, display, key, today, utcnow_iso(), place_id, lat, lon),
     ).fetchone()
     db.commit()
     return row
@@ -408,6 +438,11 @@ async def log_purchase(
     store: str = Form(...),
     price: str | None = Form(None),
     photo: UploadFile | None = File(None),
+    # Which branch, when she picked it off the map rather than typing it. Optional
+    # on purpose: a hand-typed store still works exactly as before.
+    place_id: str | None = Form(None),
+    lat: float | None = Form(None),
+    lon: float | None = Form(None),
     user=Depends(current_user),
     db: psycopg.Connection = Depends(get_db),
 ):
@@ -424,7 +459,7 @@ async def log_purchase(
                 raise HTTPException(400, "Couldn't read that photo")
 
     item = _find_or_create_item(db, user["id"], name, photo_name)
-    haul = _find_or_create_haul(db, user["id"], store)
+    haul = _find_or_create_haul(db, user["id"], store, place_id, lat, lon)
 
     new_id = db.execute(
         """INSERT INTO purchases (user_id, item_id, haul_id, price_cents, photo, purchased_at)

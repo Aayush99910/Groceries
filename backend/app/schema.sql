@@ -88,6 +88,21 @@ CREATE TABLE IF NOT EXISTS hauls (
 
 CREATE INDEX IF NOT EXISTS idx_hauls_user ON hauls(user_id);
 
+-- Which branch, and where it is.
+--
+-- store_key used to be the normalised *label* ("trader joe 225 stannage avenue").
+-- That made two branches of a chain different stores, which is what we want -- but
+-- it also made ONE branch two stores whenever OpenStreetMap worded the address
+-- differently between lookups ("225 Stannage Avenue" one time, "Stannage Avenue"
+-- the next). Prices would split in half with nothing to show it had happened.
+--
+-- OSM's place_id doesn't drift, so when we have one it becomes the identity and
+-- the label is free to be purely what she reads. Stores she types by hand have no
+-- place_id and keep falling back to the normalised name.
+ALTER TABLE hauls ADD COLUMN IF NOT EXISTS place_id TEXT;
+ALTER TABLE hauls ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;
+ALTER TABLE hauls ADD COLUMN IF NOT EXISTS lon DOUBLE PRECISION;
+
 -- "She bought this thing, here, for this much, on this day." Then later: did she
 -- like it? This table is the entire memory of the app.
 CREATE TABLE IF NOT EXISTS purchases (

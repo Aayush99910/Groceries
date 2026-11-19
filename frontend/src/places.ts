@@ -29,6 +29,9 @@ export type Place = {
   label: string;
   address: string;
   distance_m: number | null;
+  /** Where the shop is. Saved with the trip so a branch can be placed on a map. */
+  lat: number;
+  lon: number;
 };
 
 export type Coords = { lat: number; lon: number };
@@ -136,6 +139,8 @@ function shape(r: NominatimRow, here: Coords | null): Place {
     label: label.slice(0, 80),
     address: [street, city || area].filter(Boolean).join(", "),
     distance_m: here ? Math.round(distance(here.lat, here.lon, +r.lat, +r.lon)) : null,
+    lat: +r.lat,
+    lon: +r.lon,
   };
 }
 

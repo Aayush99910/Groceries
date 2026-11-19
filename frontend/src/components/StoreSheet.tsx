@@ -5,6 +5,7 @@ import {
   Coords,
   NotSignedIn,
   Place,
+  StorePlace,
   distanceLabel,
   nearbyStores,
   sameStore,
@@ -16,7 +17,7 @@ type Props = {
   current: string;
   /** Stores she has used before, most recent first. */
   recent: string[];
-  onPick: (label: string) => void;
+  onPick: (chosen: StorePlace) => void;
   onClose: () => void;
   onSignedOut: () => void;
 };
@@ -204,7 +205,7 @@ export default function StoreSheet({ current, recent, onPick, onClose, onSignedO
               {searchError && <p className="error">{searchError}</p>}
 
               {/* Always available, so a store the map doesn't know is never a dead end. */}
-              <button type="button" className="place-row manual" onClick={() => onPick(typed)}>
+              <button type="button" className="place-row manual" onClick={() => onPick({ name: typed })}>
                 <span className="place-icon plain">
                   <Icon name="plus" />
                 </span>
@@ -256,7 +257,7 @@ export default function StoreSheet({ current, recent, onPick, onClose, onSignedO
                         type="button"
                         key={name}
                         className={sameStore(name, current) ? "chip on" : "chip"}
-                        onClick={() => onPick(name)}
+                        onClick={() => onPick({ name })}
                       >
                         <Icon name="store" size="1em" />
                         {name}
@@ -280,7 +281,7 @@ function PlaceList({
 }: {
   places: Place[];
   current: string;
-  onPick: (label: string) => void;
+  onPick: (chosen: StorePlace) => void;
 }) {
   return (
     <div className="list-card">
@@ -292,7 +293,7 @@ function PlaceList({
             type="button"
             key={`${place.id}-${place.label}`}
             className="place-row"
-            onClick={() => onPick(place.label)}
+            onClick={() => onPick({ name: place.label, place_id: place.id, lat: place.lat, lon: place.lon })}
           >
             <span className={selected ? "place-icon on" : "place-icon"}>
               <Icon name={selected ? "check" : "store"} />
