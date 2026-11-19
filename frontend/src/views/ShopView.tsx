@@ -3,54 +3,56 @@ import { useEffect, useMemo, useState } from "react";
 import { useCachedState } from "../cache";
 import Icon from "../components/Icon";
 import ItemSheet from "../components/ItemSheet";
-import QuickAddSheet from "../components/QuickAddSheet";
-import { ListEntry, NotSignedIn, ShoppingList, photoUrl, sameStore, shoppingList } from "../api";
+import {
+  CartItem,
+  ListEntry,
+  NotSignedIn,
+  ShoppingList,
+  addToCart,
+  photoUrl,
+  removeFromCart,
+  sameStore,
+  shoppingList,
+} from "../api";
 
 /**
- * "What should I buy?"
+ * A feed of things she liked, to look through.
  *
- * This used to be called the shopping list, but it isn't one -- it's everything
- * she has liked, and there was nothing to do with it except tick local boxes that
- * meant nothing. Now it answers the real question: *I'm at this store, what do I
- * usually get here, and what does it cost?*
+ * Shop isn't a list to work down. It's a scroll of photo cards: look at one, think
+ * "oh, I fancy that", and put it on the cart with one tap. What she'll actually buy
+ * is planned on the Cart tab.
  *
- *   - Pick a store (or "All") and see only what she has bought and liked there,
- *     at the price she paid there.
- *   - The + on a row adds it to her basket in two taps, price prefilled.
- *   - Things waiting for a rating live on the Rate tab, so this screen doesn't
- *     carry its own confusing "not rated" bucket; a banner points the way.
+ * The order is the only "recommendation" for now: things she liked and hasn't had
+ * for the longest come first. That needs just one purchase per item, so it works
+ * with the history she has today. Frequency-based suggestions can't yet (almost
+ * nothing has been bought twice). The same feed is where smarter suggestions, from
+ * an AI later, would slot in: this screen only knows how to show a list of items.
  */
 export default function ShopView({
   refreshKey,
-  store,
-  onStore,
+  cart,
+  onCart,
   pending,
   goRate,
   goAdd,
-  onAdded,
   notify,
   onSignedOut,
 }: {
   refreshKey: number;
-  /** The store she's currently shopping at (shared with the Add tab). */
-  store: string;
-  onStore: (store: string) => void;
+  /** What's on the cart now, so a card can show "In cart". */
+  cart: CartItem[];
+  onCart: (items: CartItem[]) => void;
   pending: number;
   goRate: () => void;
   goAdd: () => void;
-  onAdded: () => void;
   notify: (message: string) => void;
   onSignedOut: () => void;
 }) {
   const [data, setData] = useCachedState<ShoppingList | null>("shop", null);
   const [error, setError] = useState<string | null>(null);
-  // null = "All stores".
-  const [filter, setFilter] = useState<string | null>(null);
   const [detail, setDetail] = useState<ListEntry | null>(null);
-  const [quick, setQuick] = useState<ListEntry | null>(null);
-  // Items added to the basket this session, so the + turns into a tick.
-  const [added, setAdded] = useState<Set<number>>(new Set());
-  const [showSkipped, setShowSkipped] = useState(false);
+  // Cards whose button is mid-request, so a double tap can't send two.
+  const [busy, setBusy] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     shoppingList()
@@ -62,25 +64,39 @@ export default function ShopView({
       });
   }, [refreshKey]);
 
-  // Every store she has bought a liked thing at, busiest first.
-  const stores = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const entry of data?.liked ?? []) {
-      for (const s of entry.stores) counts.set(s.store, (counts.get(s.store) ?? 0) + 1);
-    }
-    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  // Liked, and not had for the longest first.
+  const feed = useMemo(() => {
+    const liked = [...(data?.liked ?? [])];
+    liked.sort((a, b) => (a.last_bought_at ?? "").localeCompare(b.last_bought_at ?? ""));
+    return liked;
   }, [data]);
 
-  const allStores = useMemo(() => {
-    const names = new Set<string>();
-    for (const bucket of [data?.liked, data?.unrated, data?.disliked]) {
-      for (const entry of bucket ?? []) for (const s of entry.stores) names.add(s.store);
-    }
-    // The store she's at now goes first.
-    return [...names].sort((a, b) => Number(sameStore(b, store)) - Number(sameStore(a, store)));
-  }, [data, store]);
+  const inCart = useMemo(() => new Map(cart.map((c) => [c.item_id, c])), [cart]);
 
-  if (error) {
+  async function toggle(entry: ListEntry) {
+    if (busy.has(entry.item_id)) return;
+    setBusy((current) => new Set(current).add(entry.item_id));
+    try {
+      const existing = inCart.get(entry.item_id);
+      if (existing) {
+        onCart((await removeFromCart(existing.id)).items);
+      } else {
+        onCart((await addToCart({ itemIds: [entry.item_id] })).items);
+        notify(`${entry.name} added to your cart`);
+      }
+    } catch (err) {
+      if (err instanceof NotSignedIn) return onSignedOut();
+      notify(err instanceof Error ? err.message : "Couldn't update your cart");
+    } finally {
+      setBusy((current) => {
+        const next = new Set(current);
+        next.delete(entry.item_id);
+        return next;
+      });
+    }
+  }
+
+  if (error && !data) {
     return (
       <p className="error">
         <Icon name="close" />
@@ -89,22 +105,6 @@ export default function ShopView({
     );
   }
   if (!data) return <p className="hint loading">Loading…</p>;
-
-  const everything = data.liked.length + data.disliked.length;
-
-  // A filter pointing at a store that no longer has anything (after a delete)
-  // falls back to "All" instead of showing an empty screen.
-  const activeFilter = filter && stores.some(([name]) => sameStore(name, filter)) ? filter : null;
-
-  const groups = data.liked_grouped
-    .map((group) => ({
-      ...group,
-      items: group.items.filter(
-        (entry) => !activeFilter || entry.stores.some((s) => sameStore(s.store, activeFilter))
-      ),
-    }))
-    .filter((group) => group.items.length > 0);
-  const shown = groups.reduce((n, g) => n + g.items.length, 0);
 
   return (
     <div className="screen">
@@ -123,15 +123,15 @@ export default function ShopView({
         </button>
       )}
 
-      {everything === 0 ? (
+      {feed.length === 0 ? (
         <div className="empty">
           <div className="empty-icon">
-            <Icon name="cart" size="1.5em" />
+            <Icon name="sparkle" size="1.5em" />
           </div>
-          <h2>Your list builds itself</h2>
+          <h2>Your feed fills up as you rate</h2>
           <p>
-            Add what you buy on the Add tab, rate it once you've tried it, and the things you
-            liked show up here, with what you paid at each store.
+            Add what you buy on the Add tab, rate it once you've tried it, and the things you liked
+            show up here to put back on your cart.
           </p>
           <button type="button" className="primary inline" onClick={goAdd}>
             <Icon name="plus" />
@@ -139,102 +139,18 @@ export default function ShopView({
           </button>
         </div>
       ) : (
-        <>
-          {stores.length > 0 && (
-            <div className="chip-block">
-              <span className="eyebrow">Store</span>
-              <div className="chips scroll" role="tablist" aria-label="Filter by store">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={!activeFilter}
-                  className={!activeFilter ? "chip on" : "chip"}
-                  onClick={() => setFilter(null)}
-                >
-                  All stores
-                </button>
-                {stores.map(([name, count]) => (
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={sameStore(name, activeFilter)}
-                    key={name}
-                    className={sameStore(name, activeFilter) ? "chip on" : "chip"}
-                    onClick={() => setFilter(name)}
-                  >
-                    {name}
-                    <span className="chip-count">{count}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {data.liked.length === 0 ? (
-            <p className="caption center">
-              Nothing liked yet. Rate a few things and the good ones land here.
-            </p>
-          ) : (
-            <>
-              <p className="caption">
-                {activeFilter
-                  ? `${shown} you liked at ${activeFilter} \u00b7 tap + to add to your basket`
-                  : `${shown} you liked \u00b7 tap + to add to your basket`}
-              </p>
-
-              {groups.map((group) => (
-                <section key={group.category}>
-                  <h3 className="group-heading">
-                    <span>{group.label}</span>
-                    <span className="group-count">{group.items.length}</span>
-                  </h3>
-                  <div className="list-card">
-                    {group.items.map((entry) => (
-                      <ItemRow
-                        key={entry.item_id}
-                        entry={entry}
-                        store={activeFilter}
-                        added={added.has(entry.item_id)}
-                        onOpen={() => setDetail(entry)}
-                        onAdd={() => setQuick(entry)}
-                      />
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </>
-          )}
-
-          {data.disliked.length > 0 && (
-            <section>
-              <button
-                type="button"
-                className="disclosure"
-                aria-expanded={showSkipped}
-                onClick={() => setShowSkipped((open) => !open)}
-              >
-                <span>Things you didn't like</span>
-                <span className="group-count">{data.disliked.length}</span>
-                <span className={showSkipped ? "disclosure-chevron open" : "disclosure-chevron"}>
-                  <Icon name="chevronDown" />
-                </span>
-              </button>
-              {showSkipped && (
-                <div className="list-card" style={{ marginTop: 8 }}>
-                  {data.disliked.map((entry) => (
-                    <ItemRow
-                      key={entry.item_id}
-                      entry={entry}
-                      store={null}
-                      muted
-                      onOpen={() => setDetail(entry)}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-        </>
+        <div className="feed">
+          {feed.map((entry) => (
+            <FeedCard
+              key={entry.item_id}
+              entry={entry}
+              inCart={inCart.has(entry.item_id)}
+              busy={busy.has(entry.item_id)}
+              onOpen={() => setDetail(entry)}
+              onToggle={() => toggle(entry)}
+            />
+          ))}
+        </div>
       )}
 
       {detail && (
@@ -252,106 +168,80 @@ export default function ShopView({
           onClose={() => setDetail(null)}
         />
       )}
-
-      {quick && (
-        <QuickAddSheet
-          entry={quick}
-          defaultStore={activeFilter ?? store}
-          knownStores={allStores}
-          onClose={() => setQuick(null)}
-          onSignedOut={onSignedOut}
-          onAdded={(boughtAt) => {
-            setAdded((current) => new Set(current).add(quick.item_id));
-            // The basket follows where she actually is.
-            onStore(boughtAt);
-            notify(`${quick.name} added to your basket at ${boughtAt}`);
-            setQuick(null);
-            onAdded();
-          }}
-        />
-      )}
     </div>
   );
 }
 
-function ItemRow({
+function FeedCard({
   entry,
-  store,
-  added,
-  muted,
+  inCart,
+  busy,
   onOpen,
-  onAdd,
+  onToggle,
 }: {
   entry: ListEntry;
-  /** The store filter, or null when showing everything. */
-  store: string | null;
-  added?: boolean;
-  muted?: boolean;
+  inCart: boolean;
+  busy: boolean;
   onOpen: () => void;
-  onAdd?: () => void;
+  onToggle: () => void;
 }) {
-  // What it costs *here* when a store is picked, otherwise what she last paid.
-  const here = store ? entry.stores.find((s) => sameStore(s.store, store)) : null;
-  const price = here ? here.price : entry.last_price;
+  const src = photoUrl(entry.photo);
 
-  // Only worth a flag if it's genuinely cheaper than where she's looking.
-  const reference = store ?? entry.last_store;
-  const refPrice = entry.stores.find((s) => sameStore(s.store, reference));
+  // Only worth a flag if it's genuinely cheaper than where she last bought it.
+  const lastPrice = entry.stores.find((s) => sameStore(s.store, entry.last_store));
   const cheaper =
     entry.best &&
-    !sameStore(entry.best.store, reference) &&
-    (!refPrice || entry.best.cents < refPrice.cents)
+    !sameStore(entry.best.store, entry.last_store) &&
+    (!lastPrice || entry.best.cents < lastPrice.cents)
       ? entry.best
       : null;
 
-  const subtitle = store
-    ? sameStore(entry.last_store, store)
-      ? `Last bought ${entry.when}`
-      : `Last bought at ${entry.last_store}`
-    : (entry.last_store ?? "");
-
   return (
-    <article
-      className={`row tappable${muted ? " muted-row" : ""}${added ? " is-added" : ""}`}
-      onClick={onOpen}
-      role="button"
-    >
-      {photoUrl(entry.photo) ? (
-        <img className="thumb" src={photoUrl(entry.photo)!} alt="" />
-      ) : (
-        <div className="thumb thumb-empty">
-          <Icon name="cart" />
+    <article className="feed-card">
+      <button type="button" className="feed-photo" onClick={onOpen} aria-label={`See ${entry.name}`}>
+        {src ? (
+          <img src={src} alt="" draggable={false} loading="lazy" />
+        ) : (
+          <span className="feed-photo-empty">
+            <Icon name="cart" size="2.2em" />
+          </span>
+        )}
+        {entry.when && entry.when !== "today" && (
+          <span className="feed-chip">
+            <Icon name="clock" size="0.95em" />
+            Last had {entry.when}
+          </span>
+        )}
+      </button>
+
+      <div className="feed-body">
+        <div className="feed-text">
+          <strong>{entry.name}</strong>
+          <span className="row-sub">
+            {[entry.last_price, entry.last_store].filter(Boolean).join(" · ")}
+          </span>
+          {cheaper && (
+            <span className="cheaper">
+              <Icon name="tag" size="0.95em" />
+              <span>
+                Cheaper at {cheaper.store} {"·"} {cheaper.price}
+              </span>
+            </span>
+          )}
         </div>
-      )}
-      <div className="row-body">
-        <strong>{entry.name}</strong>
-        <span className="row-sub">{subtitle}</span>
-      </div>
-      {price && <span className="price">{price}</span>}
-      {onAdd && (
+
         <button
           type="button"
-          className={added ? "add-btn done" : "add-btn"}
-          aria-label={added ? `${entry.name} is in your basket` : `Add ${entry.name} to your basket`}
-          // The row opens the detail sheet; this must not bubble up to it.
-          onClick={(e) => {
-            e.stopPropagation();
-            onAdd();
-          }}
+          className={inCart ? "cart-add on" : "cart-add"}
+          onClick={onToggle}
+          disabled={busy}
+          aria-pressed={inCart}
+          aria-label={inCart ? `Take ${entry.name} off your cart` : `Add ${entry.name} to your cart`}
         >
-          <Icon name={added ? "check" : "plus"} />
+          <Icon name={inCart ? "check" : "plus"} />
+          {inCart ? "In cart" : "Add"}
         </button>
-      )}
-      {cheaper && (
-        <div className="cheaper-line">
-          <span className="cheaper">
-            <Icon name="tag" size="0.95em" />
-            <span>
-              Cheaper at {cheaper.store} {"\u00b7"} {cheaper.price}
-            </span>
-          </span>
-        </div>
-      )}
+      </div>
     </article>
   );
 }

@@ -1,12 +1,26 @@
 import { useEffect, useState } from "react";
 
 import Icon from "./Icon";
-import { ListEntry, NotSignedIn, Purchase, logPurchase, photoUrl, sameStore } from "../api";
+import {
+  ListEntry,
+  NotSignedIn,
+  Purchase,
+  StorePlace,
+  logPurchase,
+  photoUrl,
+  sameStore,
+} from "../api";
 
 type Props = {
   entry: ListEntry;
   /** The store she's currently shopping at, if she's picked one. */
   defaultStore: string;
+  /** The branch she's at, if she picked it off the map. Sent along when the store
+   *  chosen here is that one, so the purchase lands on the same store (and prices
+   *  don't split) instead of looking like a second, hand-typed one. */
+  place?: StorePlace | null;
+  /** The small line above the name. "Buying again" from a list; "Got it?" from the cart. */
+  eyebrow?: string;
   /** Every store she has shopped at, for one-tap choosing. */
   knownStores: string[];
   onClose: () => void;
@@ -30,6 +44,8 @@ function dollars(cents: number): string {
 export default function QuickAddSheet({
   entry,
   defaultStore,
+  place,
+  eyebrow = "Buying again",
   knownStores,
   onClose,
   onAdded,
@@ -77,7 +93,13 @@ export default function QuickAddSheet({
     setSaving(true);
     setError(null);
     try {
-      const result = await logPurchase({ name: entry.name, store: store.trim(), price, photo: null });
+      const result = await logPurchase({
+        name: entry.name,
+        store: store.trim(),
+        price,
+        photo: null,
+        place: place && sameStore(place.name, store) ? place : null,
+      });
       onAdded(store.trim(), result.purchase);
     } catch (err) {
       if (err instanceof NotSignedIn) return onSignedOut();
@@ -108,7 +130,7 @@ export default function QuickAddSheet({
             </div>
           )}
           <div className="row-body">
-            <span className="eyebrow">Buying again</span>
+            <span className="eyebrow">{eyebrow}</span>
             <strong className="quick-name">{entry.name}</strong>
           </div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Close">

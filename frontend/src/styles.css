@@ -595,15 +595,15 @@ button {
   align-items: center;
   gap: 10px;
   row-gap: 4px;
-  min-height: 74px;
-  padding: 11px 14px;
+  min-height: 62px;
+  padding: 9px 12px;
 }
 
 /* A note under the row, in line with the text and not squeezed beside the price. */
 .cheaper-line {
   flex: 0 0 100%;
   min-width: 0;
-  padding-left: 58px;
+  padding-left: 54px;
   margin-top: -2px;
 }
 
@@ -634,9 +634,9 @@ button {
 }
 
 .thumb {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border-radius: 12px;
   object-fit: cover;
   background: var(--surface-sunk);
@@ -705,7 +705,7 @@ button {
   flex: none;
   margin-left: auto;
   font-family: var(--font-round);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
@@ -2513,4 +2513,199 @@ button {
   .nav-item .nav-icon {
     transition: none;
   }
+}
+
+/* ---------------- shop: the feed ---------------- */
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.feed-card {
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+/* The whole photo, not a crop (see the note on .rate-photo). */
+.feed-photo {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 5 / 4;
+  max-height: 44dvh;
+  padding: 0;
+  border: 0;
+  background: var(--surface-sunk);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.feed-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.feed-photo-empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--muted);
+}
+
+/* When she last had it: the reason this card is near the top. */
+.feed-chip {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-soft);
+}
+
+.feed-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 14px;
+}
+
+.feed-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.feed-text strong {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+/* A clear button with words on it, not a lone + to guess at. */
+.cart-add {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-round);
+  font-size: 15px;
+  font-weight: 700;
+  transition: transform 0.08s ease;
+}
+
+.cart-add:active {
+  transform: scale(0.96);
+}
+
+.cart-add:disabled {
+  opacity: 0.6;
+}
+
+.cart-add.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---------------- cart ---------------- */
+
+.inline-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.inline-form .primary {
+  min-height: 51px;
+  padding: 0 22px;
+}
+
+.cart-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.empty.compact {
+  padding: 28px 16px 20px;
+}
+
+.row.got .price {
+  color: var(--text-soft);
+}
+
+/* The tick is a small circle, but the thing to tap is much bigger. */
+.row > .tick {
+  position: relative;
+}
+
+.row > .tick::before {
+  content: "";
+  position: absolute;
+  inset: -13px;
+}
+
+/* The cart's count: green, because it's a plan, not something that needs attention
+   (red is for things waiting on you, like ratings). */
+.badge.soft {
+  background: var(--accent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .cart-add {
+    color: #0d241a;
+  }
+  .cart-add.on {
+    color: var(--accent);
+  }
+  .badge.soft {
+    color: #0d241a;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cart-add {
+    transition: none;
+  }
+}
+
+/* A name that may use two lines before it's cut off, for rows where a long name
+   ("Free-range eggs") would otherwise lose its end on a small phone. */
+.row-body strong.clamp2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  overflow: hidden;
 }

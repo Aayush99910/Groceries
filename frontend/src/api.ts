@@ -36,7 +36,10 @@ export type ListEntry = {
   dislikes: number;
   last_store: string | null;
   last_price: string | null;
-  when: string;
+  /** "3 weeks ago", or null for something that has never been bought. */
+  when: string | null;
+  /** ISO time of the last purchase, for ordering the feed. */
+  last_bought_at: string | null;
   stores: StorePrice[];
   best: StorePrice | null;
 };
@@ -221,6 +224,42 @@ export async function shoppingList() {
   return json<ShoppingList>(await fetch("/api/shopping-list", withCookies));
 }
 
+// ---------------------------------------------------------------- the cart
+
+/** Something she plans to get. Same shape as a list entry, plus its place on the cart. */
+export type CartItem = ListEntry & { id: number; added_at: string };
+
+export type HaulDetail = {
+  haul: { id: number; store: string; shopped_on: string };
+  purchases: Purchase[];
+};
+
+// Every cart call answers with the whole updated cart, so the screen can swap it in
+// at once instead of patching its own copy.
+export async function getCart() {
+  return json<{ items: CartItem[] }>(await fetch("/api/cart", withCookies));
+}
+
+export async function addToCart(input: { itemIds?: number[]; name?: string }) {
+  return json<{ items: CartItem[] }>(
+    await postJson("/api/cart", { item_ids: input.itemIds ?? [], name: input.name })
+  );
+}
+
+export async function removeFromCart(id: number) {
+  return json<{ items: CartItem[] }>(
+    await fetch(`/api/cart/${id}`, { ...withCookies, method: "DELETE" })
+  );
+}
+
+export async function clearCart() {
+  return json<{ items: CartItem[] }>(await fetch("/api/cart", { ...withCookies, method: "DELETE" }));
+}
+
+export async function getHaul(id: number) {
+  return json<HaulDetail>(await fetch(`/api/hauls/${id}`, withCookies));
+}
+
 export async function listHauls() {
   return json<{ hauls: Haul[] }>(await fetch("/api/hauls", withCookies));
 }
@@ -344,6 +383,11 @@ export function money(cents: number): string {
  * where a laptop types a straight one, and the server already treats them alike.
  * Compare the same way here.
  */
+/** "Trader Joe's \u00b7 39324 Argonaut Way" as "Trader Joe's": the name without the street. */
+export function shortStore(label: string): string {
+  return label.split(" \u00b7 ")[0];
+}
+
 export function sameStore(a: string | null | undefined, b: string | null | undefined): boolean {
   const norm = (v: string | null | undefined) =>
     (v ?? "").replace(/[‘’]/g, "'").trim().toLowerCase();

@@ -6,12 +6,14 @@ import ProfileView from "./views/ProfileView";
 import RateView from "./views/RateView";
 import ShopView from "./views/ShopView";
 import AddView from "./views/AddView";
-import { StorePlace, User, logout, me, pendingRatings, photoUrl } from "./api";
+import CartView from "./views/CartView";
+import { CartItem, StorePlace, User, getCart, logout, me, pendingRatings, photoUrl } from "./api";
 
-type Tab = "shop" | "add" | "rate";
+type Tab = "shop" | "cart" | "add" | "rate";
 
 const TABS: { key: Tab; label: string; icon: IconName }[] = [
-  { key: "shop", label: "Shop", icon: "list" },
+  { key: "shop", label: "Shop", icon: "sparkle" },
+  { key: "cart", label: "Cart", icon: "cart" },
   { key: "add", label: "Add", icon: "plus" },
   { key: "rate", label: "Rate", icon: "thumbUp" },
 ];
@@ -64,6 +66,9 @@ export default function App() {
   const [view, setView] = useState<"tabs" | "profile">("tabs");
   const [refreshKey, setRefreshKey] = useState(0);
   const [pending, setPending] = useState(0);
+  // What she plans to get. Held here, not in a screen, so the Shop feed can show
+  // "In cart", the Cart can list it, and the tab can carry a count.
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [store, setStoreState] = useState(readStore);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -112,6 +117,9 @@ export default function App() {
     pendingRatings()
       .then((r) => setPending(r.purchases.length))
       .catch(() => undefined);
+    getCart()
+      .then((r) => setCart(r.items))
+      .catch(() => undefined);
   }, [refreshKey, user]);
 
   async function signOut() {
@@ -123,6 +131,7 @@ export default function App() {
       // ignore
     }
     setStoreState(null);
+    setCart([]);
     setUser(null);
     setView("tabs");
     setTab("shop");
@@ -151,7 +160,11 @@ export default function App() {
   }
 
   const heading: Record<Tab, { title: string; sub: string }> = {
-    shop: { title: "What to buy", sub: "Things you liked, with what you paid" },
+    shop: { title: "For you", sub: "Things you liked, ready for your cart" },
+    cart: {
+      title: "Your cart",
+      sub: cart.length > 0 ? "Tick things off as you shop" : "Plan what to get",
+    },
     add: { title: "Add what you bought", sub: store ? "" : "Pick a store to begin" },
     rate: {
       title: "Rate your items",
@@ -209,15 +222,24 @@ export default function App() {
             {tab === "shop" && (
               <ShopView
                 refreshKey={refreshKey}
-                // Shop only displays and compares the name, so it keeps the plain
-                // string. A store set from here was typed rather than picked off
-                // the map, so it carries no branch id.
-                store={store?.name ?? ""}
-                onStore={(name) => setStore({ name })}
+                cart={cart}
+                onCart={setCart}
                 pending={pending}
                 goRate={() => go("rate")}
                 goAdd={() => go("add")}
-                onAdded={refresh}
+                notify={notify}
+                onSignedOut={onSignedOut}
+              />
+            )}
+            {tab === "cart" && (
+              <CartView
+                cart={cart}
+                onCart={setCart}
+                store={store}
+                onStore={setStore}
+                refreshKey={refreshKey}
+                onLogged={refresh}
+                goShop={() => go("shop")}
                 notify={notify}
                 onSignedOut={onSignedOut}
               />
@@ -269,6 +291,9 @@ export default function App() {
                 </span>
                 <span className="nav-label">{t.label}</span>
                 {t.key === "rate" && pending > 0 && <span className="badge">{pending}</span>}
+                {t.key === "cart" && cart.length > 0 && (
+                  <span className="badge soft">{cart.length}</span>
+                )}
               </button>
             );
           })}

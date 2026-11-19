@@ -2,11 +2,12 @@
 
 A tiny web app so she doesn't have to think in the grocery store.
 
-Three tabs, one job each, plus a profile page. Read together they're a sentence: look at what to buy, add what you bought, rate it.
+Four tabs, one job each, plus a profile page. Read together: look through ideas, plan your cart, add what you bought, rate it.
 
 | Screen | When | What she does |
 | --- | --- | --- |
-| **Shop** — *What to buy* | before and during shopping | pick a store, see what she liked there and what it cost; tap **+** to add it to her basket in two taps |
+| **Shop** — *For you* | whenever | a **feed** of photo cards: things she liked, the ones she hasn't had for longest first. One tap on **Add** puts a card on the cart |
+| **Cart** — *Your cart* | planning, then in the store | that day's list: things she **plans to get**, ticked off as she shops (which records the purchase), and a **Got it** section with the total. Add by typing, from the feed, or **from a past trip** |
 | **Add** — *Add what you bought* | in the aisle | pick the store in a pop-up (near you, by name, or a recent one), then add things as they go in the trolley; a basket shows the running total |
 | **Rate** | at home, after eating it | a row of cards you **swipe** through (the next one peeks in); **Skip it** or **Buy again** act on the card in front, each confirmed in an iOS-style pop-up; an **Undo** beside the last thing you rated. A line at the top says how it works |
 | **Profile** (tap the avatar) | any time | photo, name and email, stats about her shopping, where she shops, exports, change password, sign out. No tab bar here: Back is the only way out |
@@ -15,9 +16,20 @@ The date is filled in by the backend. Nothing else is asked of her.
 
 ### Why it's shaped this way
 
-- **Shop is answering a question**, "I'm at Safeway, what do I usually get and what
-  does it cost?", not showing a log. The store chips filter to what she bought there,
-  at the price she paid there, and flag anything cheaper elsewhere.
+- **Shop is a feed, not a list.** It used to be everything she'd ever liked, filtered by
+  store, and she still had to scan 20 rows and decide. Now it's cards to look through
+  ("oh, I like that one"), one tap to put one on the cart. The order is the only
+  recommendation so far: liked things she hasn't had in the longest, which needs just one
+  purchase per item and so works with the history she has today. (Frequency-based
+  suggestions can't yet: almost nothing has been bought twice.) The feed only knows how to
+  show a list of items, so smarter suggestions, from an AI later, slot in underneath.
+- **Cart is the day's plan, and it only exists once something is on it.** There's no "start
+  a cart" step, just rows (`cart_items`) that appear when she adds something: from the feed,
+  typed in, or picked from a previous trip so it's ready to tick off at the store. Ticking
+  something off opens the same pop-up as a purchase, prefilled with its price at that store,
+  and *buying an item removes it from the cart in the same commit* (`log_purchase`), so
+  entering it on the Add tab instead can't leave it in both places. Planned items stay until
+  they're ticked off or removed; there's a Clear cart button, with a confirmation.
 - **Add** (it was called Trip, and before that Log, which meant nothing to anyone) is a verb
   because adding is what she does in the aisle. It puts the store first because it's the one thing that doesn't change
   mid-shop. A trip is whatever was bought at that store in the last 8 hours. It uses
@@ -222,6 +234,10 @@ without one.
 | `POST` | `/api/purchases/{id}/unrate` | undo a rating |
 | `DELETE` | `/api/purchases/{id}` | remove a mis-logged purchase |
 | `GET` | `/api/shopping-list` | liked / unrated / disliked, with per-store prices |
+| `GET` | `/api/cart` | what she plans to get, with per-store prices |
+| `POST` | `/api/cart` | `{item_ids?, name?}`, put things on the cart (repeats are fine) |
+| `DELETE` | `/api/cart/{id}` | take one thing off |
+| `DELETE` | `/api/cart` | clear it |
 | `GET` | `/api/hauls` | trips, with totals and how many still need rating |
 | `POST` | `/api/items/{a}/merge-into/{b}` | fix a duplicate |
 | `PATCH` | `/api/items/{id}` | rename or recategorise |
