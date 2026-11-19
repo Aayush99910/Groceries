@@ -467,6 +467,11 @@ async def log_purchase(
            RETURNING id""",
         (user["id"], item["id"], haul["id"], parse_price_cents(price), photo_name, utcnow_iso()),
     ).fetchone()["id"]
+    # If it was on her cart, it's bought now: take it off, in the same commit, so
+    # logging it from the Add tab or ticking it off the cart can't leave it in both.
+    db.execute(
+        "DELETE FROM cart_items WHERE user_id = %s AND item_id = %s", (user["id"], item["id"])
+    )
     db.commit()
 
     count = db.execute(
@@ -710,41 +715,50 @@ def delete_purchase(
 # --------------------------------------------------------------------------
 
 
-@app.get("/api/shopping-list")
-def shopping_list(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
-    """What she liked, what she didn't, and where each thing was cheapest.
+def _item_entries(
+    db: psycopg.Connection, user_id: int, item_ids: list[int] | None = None
+) -> list[dict]:
+    """Items in the shape the Shop feed and the Cart both show.
 
-    Two buckets plus the not-yet-rated. Prices come from what was actually paid,
-    per store.
+    Name, photo, how it was rated, what was paid at each store, when it was last
+    bought. `item_ids=None` means every item she has ever bought (the Shop feed). A
+    list means just those, including items never bought at all, which a cart can hold
+    (something typed in, or planned from a past trip).
     """
+    where, params = "i.user_id = %s", [user_id]
+    price_filter, price_params = "", []
+    if item_ids is not None:
+        if not item_ids:
+            return []
+        where += " AND i.id = ANY(%s)"
+        params.append(list(item_ids))
+        price_filter, price_params = " AND p.item_id = ANY(%s)", [list(item_ids)]
+
     rows = db.execute(
-        """SELECT i.id, i.name, i.category, i.photo,
-                  COUNT(p.id) AS times_bought,
-                  SUM(CASE WHEN p.liked IS TRUE  THEN 1 ELSE 0 END) AS likes,
-                  SUM(CASE WHEN p.liked IS FALSE THEN 1 ELSE 0 END) AS dislikes,
-                  MAX(p.purchased_at) AS last_purchased_at
-           FROM items i
-           JOIN purchases p ON p.item_id = i.id
-           WHERE i.user_id = %s
-           GROUP BY i.id
-           ORDER BY likes DESC, last_purchased_at DESC""",
-        (user["id"],),
+        f"""SELECT i.id, i.name, i.category, i.photo,
+                   COUNT(p.id) AS times_bought,
+                   COALESCE(SUM(CASE WHEN p.liked IS TRUE  THEN 1 ELSE 0 END), 0) AS likes,
+                   COALESCE(SUM(CASE WHEN p.liked IS FALSE THEN 1 ELSE 0 END), 0) AS dislikes,
+                   MAX(p.purchased_at) AS last_purchased_at
+            FROM items i
+            LEFT JOIN purchases p ON p.item_id = i.id
+            WHERE {where}
+            GROUP BY i.id""",
+        params,
     ).fetchall()
 
     # Cheapest price seen per item per store.
     price_rows = db.execute(
-        # Same grouping rule as above: h.store must be aggregated because the
-        # group is (item, store_key).
-        """SELECT p.item_id, MAX(h.store) AS store,
-                  MIN(p.price_cents) AS cheapest
-           FROM purchases p
-           JOIN hauls h ON h.id = p.haul_id
-           WHERE p.user_id = %s AND p.price_cents IS NOT NULL
-           GROUP BY p.item_id, h.store_key
-           ORDER BY cheapest ASC""",
-        (user["id"],),
+        # h.store must be aggregated because the group is (item, store_key).
+        f"""SELECT p.item_id, MAX(h.store) AS store,
+                   MIN(p.price_cents) AS cheapest
+            FROM purchases p
+            JOIN hauls h ON h.id = p.haul_id
+            WHERE p.user_id = %s AND p.price_cents IS NOT NULL{price_filter}
+            GROUP BY p.item_id, h.store_key
+            ORDER BY cheapest ASC""",
+        [user_id, *price_params],
     ).fetchall()
-
     prices: dict[int, list[dict]] = {}
     for r in price_rows:
         prices.setdefault(r["item_id"], []).append(
@@ -752,22 +766,20 @@ def shopping_list(user=Depends(current_user), db: psycopg.Connection = Depends(g
         )
 
     last_rows = db.execute(
-        """SELECT p.item_id, h.store, p.price_cents
-           FROM purchases p
-           JOIN hauls h ON h.id = p.haul_id
-           WHERE p.id IN (
-               SELECT MAX(id) FROM purchases WHERE user_id = %s GROUP BY item_id
-           )""",
-        (user["id"],),
+        f"""SELECT p.item_id, h.store, p.price_cents
+            FROM purchases p
+            JOIN hauls h ON h.id = p.haul_id
+            WHERE p.id IN (
+                SELECT MAX(p.id) FROM purchases p WHERE p.user_id = %s{price_filter} GROUP BY p.item_id
+            )""",
+        [user_id, *price_params],
     ).fetchall()
     last_seen = {r["item_id"]: r for r in last_rows}
 
-    liked: list[dict] = []
-    disliked: list[dict] = []
-    unrated: list[dict] = []
-
+    entries = []
     for r in rows:
         last = last_seen.get(r["id"])
+        bought = r["last_purchased_at"]
         entry = {
             "item_id": r["id"],
             "name": r["name"],
@@ -779,21 +791,40 @@ def shopping_list(user=Depends(current_user), db: psycopg.Connection = Depends(g
             "dislikes": r["dislikes"],
             "last_store": last["store"] if last else None,
             "last_price": format_price(last["price_cents"]) if last else None,
-            "when": _days_ago_phrase(r["last_purchased_at"]),
+            # None for something never bought, so the frontend can say so honestly.
+            "when": _days_ago_phrase(bought) if bought else None,
+            "last_bought_at": bought,
             "stores": prices.get(r["id"], []),
         }
         entry["best"] = entry["stores"][0] if entry["stores"] else None
+        entries.append(entry)
+    return entries
 
-        if r["likes"] > r["dislikes"]:
+
+@app.get("/api/shopping-list")
+def shopping_list(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
+    """What she liked, what she didn't, and where each thing was cheapest.
+
+    Two buckets plus the not-yet-rated. Prices come from what was actually paid,
+    per store.
+    """
+    entries = [e for e in _item_entries(db, user["id"]) if e["times_bought"] > 0]
+    entries.sort(key=lambda e: (-e["likes"], _neg_iso(e["last_bought_at"])))
+
+    liked: list[dict] = []
+    disliked: list[dict] = []
+    unrated: list[dict] = []
+    for entry in entries:
+        if entry["likes"] > entry["dislikes"]:
             liked.append(entry)
-        elif r["dislikes"] > 0:
+        elif entry["dislikes"] > 0:
             disliked.append(entry)
         else:
             unrated.append(entry)
 
-    def grouped(entries: list[dict]) -> list[dict]:
+    def grouped(group: list[dict]) -> list[dict]:
         buckets: dict[str, list[dict]] = {}
-        for e in entries:
+        for e in group:
             buckets.setdefault(e["category"], []).append(e)
         return [
             {"category": c, "label": CATEGORY_LABELS[c], "items": buckets[c]}
@@ -807,6 +838,90 @@ def shopping_list(user=Depends(current_user), db: psycopg.Connection = Depends(g
         "disliked": disliked,
         "unrated": unrated,
     }
+
+
+def _neg_iso(iso: str | None) -> float:
+    """Sort key for 'most recently bought first'."""
+    return -parse_iso(iso).timestamp() if iso else 0.0
+
+
+# --------------------------------------------------------------------------
+# the cart: what she plans to get
+# --------------------------------------------------------------------------
+
+
+def _cart_payload(db: psycopg.Connection, user_id: int) -> dict:
+    rows = db.execute(
+        "SELECT id, item_id, added_at FROM cart_items WHERE user_id = %s ORDER BY added_at, id",
+        (user_id,),
+    ).fetchall()
+    entries = {e["item_id"]: e for e in _item_entries(db, user_id, [r["item_id"] for r in rows])}
+    return {
+        "items": [
+            {"id": r["id"], "added_at": r["added_at"], **entries[r["item_id"]]}
+            for r in rows
+            if r["item_id"] in entries
+        ]
+    }
+
+
+class CartAdd(BaseModel):
+    item_ids: list[int] = Field(default_factory=list, max_length=200)
+    # Something typed in that may not be an item yet. It becomes one, like a purchase would.
+    name: str | None = Field(None, max_length=80)
+
+
+@app.get("/api/cart")
+def get_cart(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
+    return _cart_payload(db, user["id"])
+
+
+@app.post("/api/cart")
+def add_to_cart(
+    body: CartAdd, user=Depends(current_user), db: psycopg.Connection = Depends(get_db)
+):
+    """Put things on the cart. Adding what's already there is fine and changes nothing."""
+    ids: list[int] = []
+    if body.item_ids:
+        # Only her own items: an id from another account is silently ignored, the
+        # same as everywhere else in this app.
+        ids = [
+            r["id"]
+            for r in db.execute(
+                "SELECT id FROM items WHERE user_id = %s AND id = ANY(%s)",
+                (user["id"], body.item_ids),
+            ).fetchall()
+        ]
+    if body.name and body.name.strip():
+        ids.append(_find_or_create_item(db, user["id"], body.name, None)["id"])
+    if not ids:
+        raise HTTPException(400, "Nothing to add")
+
+    now = utcnow_iso()
+    for item_id in dict.fromkeys(ids):  # in order, without repeats
+        db.execute(
+            """INSERT INTO cart_items (user_id, item_id, added_at) VALUES (%s, %s, %s)
+               ON CONFLICT (user_id, item_id) DO NOTHING""",
+            (user["id"], item_id, now),
+        )
+    db.commit()
+    return _cart_payload(db, user["id"])
+
+
+@app.delete("/api/cart/{cart_id}")
+def remove_from_cart(
+    cart_id: int, user=Depends(current_user), db: psycopg.Connection = Depends(get_db)
+):
+    db.execute("DELETE FROM cart_items WHERE id = %s AND user_id = %s", (cart_id, user["id"]))
+    db.commit()
+    return _cart_payload(db, user["id"])
+
+
+@app.delete("/api/cart")
+def clear_cart(user=Depends(current_user), db: psycopg.Connection = Depends(get_db)):
+    db.execute("DELETE FROM cart_items WHERE user_id = %s", (user["id"],))
+    db.commit()
+    return {"items": []}
 
 
 # --------------------------------------------------------------------------
